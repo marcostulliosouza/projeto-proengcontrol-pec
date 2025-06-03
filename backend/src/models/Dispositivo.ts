@@ -9,7 +9,7 @@ export class DispositivoModel {
   ): Promise<{ dispositivos: Dispositivo[]; total: number }> {
     try {
       let whereClause = 'WHERE 1=1';
-      const params: any[] = [];
+      const params: unknown[] = [];
 
       // Aplicar filtros
       if (filters.search) {
@@ -39,7 +39,23 @@ export class DispositivoModel {
       // Query para buscar dados
       const dataQuery = `
         SELECT 
-          d.*,
+          d.dis_id,
+          d.dis_descricao,
+          d.dis_cliente,
+          d.dis_nota_fiscal_atual,
+          d.dis_com_manutencao,
+          d.dis_info_manutencao,
+          d.dis_data_cadastro,
+          d.dis_codigo_sap,
+          d.dis_com_imagem,
+          d.dis_status,
+          d.dis_observacao,
+          d.dis_ciclos_de_vida,
+          d.dis_ciclos_executados,
+          d.dis_doc_enviado,
+          d.dis_extensao_imagem,
+          d.dis_posicao_estoque,
+          d.dis_local,
           c.cli_nome as cliente_nome,
           sd.sdi_descricao as status_descricao,
           dim.dim_tipo_intervalo,
@@ -53,12 +69,12 @@ export class DispositivoModel {
         LEFT JOIN dispositivo_info_manutencao dim ON d.dis_info_manutencao = dim.dim_id
         ${whereClause}
         ORDER BY d.dis_data_cadastro DESC
-        LIMIT ? OFFSET ?
+        LIMIT ${pagination.limit} OFFSET ${pagination.offset}
       `;
 
       const [countResult, dispositivos] = await Promise.all([
         executeQuery(countQuery, params),
-        executeQuery(dataQuery, [...params, pagination.limit, pagination.offset])
+        executeQuery(dataQuery, params)
       ]);
 
       return {
@@ -76,7 +92,23 @@ export class DispositivoModel {
     try {
       const query = `
         SELECT 
-          d.*,
+          d.dis_id,
+          d.dis_descricao,
+          d.dis_cliente,
+          d.dis_nota_fiscal_atual,
+          d.dis_com_manutencao,
+          d.dis_info_manutencao,
+          d.dis_data_cadastro,
+          d.dis_codigo_sap,
+          d.dis_com_imagem,
+          d.dis_status,
+          d.dis_observacao,
+          d.dis_ciclos_de_vida,
+          d.dis_ciclos_executados,
+          d.dis_doc_enviado,
+          d.dis_extensao_imagem,
+          d.dis_posicao_estoque,
+          d.dis_local,
           c.cli_nome as cliente_nome,
           sd.sdi_descricao as status_descricao,
           dim.dim_tipo_intervalo,

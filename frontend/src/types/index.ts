@@ -29,7 +29,31 @@ export interface ApiResponse<T = unknown> {
 }
 
 // Tipos para Dispositivos
-export interface Dispositivo {
+export interface Dispositivo extends Record<string, unknown> {
+  dis_id: number;
+  dis_descricao: string;
+  dis_cliente: number | null;
+  dis_nota_fiscal_atual: number | null;
+  dis_com_manutencao: number;
+  dis_info_manutencao: number | null;
+  dis_data_cadastro: string;
+  dis_codigo_sap: string | null;
+  dis_com_imagem: number;
+  dis_status: number;
+  dis_observacao: string | null;
+  dis_ciclos_de_vida: number;
+  dis_ciclos_executados: number;
+  dis_doc_enviado: number;
+  dis_extensao_imagem: string | null;
+  dis_posicao_estoque: string | null;
+  dis_local: string | null;
+  // Campos relacionados
+  cliente_nome?: string;
+  status_descricao?: string;
+}
+
+// Tipos para Dispositivos
+export interface Dispositivo extends Record<string, unknown> {
   dis_id: number;
   dis_descricao: string;
   dis_cliente: number | null;
@@ -53,7 +77,7 @@ export interface Dispositivo {
 }
 
 // Tipos para Chamados
-export interface Chamado {
+export interface Chamado extends Record<string, unknown> {
   cha_id: number;
   cha_tipo: number;
   cha_cliente: number;
@@ -73,19 +97,6 @@ export interface Chamado {
   status_chamado?: string;
   cliente_nome?: string;
   produto_nome?: string;
-}
-
-// Tipos para Dashboard
-export interface DashboardStats {
-  totalDispositivos: number;
-  dispositivosAtivos: number;
-  chamadosAbertos: number;
-  manutencoesPendentes: number;
-  indicadorMensal: {
-    minutos: number;
-    atendimentos: number;
-    atrasos: number;
-  };
 }
 
 // Tipos para componentes
