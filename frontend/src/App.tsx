@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Dispositivos from './pages/Dispositivos';
+import Chamados from './pages/Chamados'; // Nova importação
 import ProtectedRoute from './components/layout/ProtectedRoute';
 import MainLayout from './components/layout/MainLayout';
 
@@ -27,6 +28,16 @@ function App() {
             <ProtectedRoute>
               <MainLayout>
                 <Dispositivos />
+              </MainLayout>
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/chamados" 
+          element={
+            <ProtectedRoute>
+              <MainLayout>
+                <Chamados />
               </MainLayout>
             </ProtectedRoute>
           } 

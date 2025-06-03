@@ -3,6 +3,8 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
+import { createServer } from 'http';
+import { Server as SocketServer } from 'socket.io';
 import 'module-alias/register';
 
 // Importar rotas e middlewares
@@ -17,6 +19,17 @@ import { errorHandler } from './middlewares/errorHandler';
 dotenv.config();
 
 const app = express();
+
+const server = createServer(app);
+const io = new SocketServer(server, {
+  cors: {
+    origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+    methods: ['GET', 'POST'],
+    credentials: true
+  }
+});
+
+
 const PORT = process.env.PORT || 3001;
 const API_PREFIX = process.env.API_PREFIX || '/api/v1';
 
@@ -42,6 +55,23 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('combined'));
 }
 
+// Store para controlar locks de chamados
+const chamadoLocks = new Map();
+const activeUsers = new Map();
+
+io.on('connection', (socket) => {
+  console.log('Cliente conectado:', socket.id);
+  
+  // Usuário se autentica
+  socket.on('authenticate', (userData) => {
+    activeUsers.set(socket.id, {
+      ...userData,
+      socketId: socket.id,
+      connectedAt: new Date()
+    });
+    socket.broadcast.emit('user_connected', userData);
+  });
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({
@@ -50,6 +80,78 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     version: '1.0.0',
     environment: process.env.NODE_ENV
+  });
+});
+
+// Usuário tenta abrir/lock um chamado
+  socket.on('lock_chamado', (data) => {
+    const { chamadoId, userId, userName } = data;
+    
+    if (!chamadoLocks.has(chamadoId)) {
+      // Lock disponível
+      chamadoLocks.set(chamadoId, {
+        userId,
+        userName,
+        socketId: socket.id,
+        lockedAt: new Date()
+      });
+      
+      socket.emit('lock_success', { chamadoId });
+      socket.broadcast.emit('chamado_locked', {
+        chamadoId,
+        lockedBy: { userId, userName }
+      });
+    } else {
+      // Já está locked
+      const lockInfo = chamadoLocks.get(chamadoId);
+      socket.emit('lock_failed', { 
+        chamadoId, 
+        lockedBy: lockInfo 
+      });
+    }
+  });
+
+  // Usuário libera lock do chamado
+  socket.on('unlock_chamado', (data) => {
+    const { chamadoId } = data;
+    if (chamadoLocks.has(chamadoId)) {
+      chamadoLocks.delete(chamadoId);
+      io.emit('chamado_unlocked', { chamadoId });
+    }
+  });
+
+  // Atualização de status do chamado
+  socket.on('chamado_updated', (chamadoData) => {
+    socket.broadcast.emit('chamado_changed', chamadoData);
+  });
+
+  // Timer de atendimento
+  socket.on('start_timer', (data) => {
+    socket.broadcast.emit('timer_started', data);
+  });
+
+  socket.on('timer_update', (data) => {
+    socket.broadcast.emit('timer_updated', data);
+  });
+
+  // Desconexão
+  socket.on('disconnect', () => {
+    console.log('Cliente desconectado:', socket.id);
+    
+    // Remover locks do usuário
+    for (const [chamadoId, lockInfo] of chamadoLocks.entries()) {
+      if (lockInfo.socketId === socket.id) {
+        chamadoLocks.delete(chamadoId);
+        socket.broadcast.emit('chamado_unlocked', { chamadoId });
+      }
+    }
+    
+    // Remover usuário ativo
+    const user = activeUsers.get(socket.id);
+    if (user) {
+      activeUsers.delete(socket.id);
+      socket.broadcast.emit('user_disconnected', user);
+    }
   });
 });
 
@@ -106,7 +208,7 @@ const startServer = async () => {
     }
 
     // Iniciar servidor
-    app.listen(PORT, () => {
+    server.listen(PORT, () => {
       console.log('🚀 ProEngControl - PEC API');
       console.log(`📡 Servidor rodando na porta ${PORT}`);
       console.log(`🌍 Environment: ${process.env.NODE_ENV}`);
