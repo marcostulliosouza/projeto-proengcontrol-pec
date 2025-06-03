@@ -28,64 +28,63 @@ export const useChamadosRealTime = (initialChamados: Chamado[]) => {
     setChamados(initialChamados);
   }, [initialChamados]);
 
-  // Escutar eventos do socket
   useEffect(() => {
-    if (!socket) return;
+  if (!socket) return;
 
-    // Chamado foi locked por outro usuário
-    socket.on('chamado_locked', (data: ChamadoLock) => {
-      setLockedChamados(prev => {
-        const filtered = prev.filter(lock => lock.chamadoId !== data.chamadoId);
-        return [...filtered, data];
-      });
+  // Chamado foi locked por outro usuário
+  socket.on('chamado_locked', (data: ChamadoLock) => {
+    setLockedChamados(prev => {
+      const filtered = prev.filter(lock => lock.chamadoId !== data.chamadoId);
+      return [...filtered, data];
     });
+  });
 
-    // Chamado foi unlocked
-    socket.on('chamado_unlocked', (data: { chamadoId: number }) => {
-      setLockedChamados(prev => 
-        prev.filter(lock => lock.chamadoId !== data.chamadoId)
-      );
-      setTimers(prev => 
-        prev.filter(timer => timer.chamadoId !== data.chamadoId)
-      );
+  // Chamado foi unlocked
+  socket.on('chamado_unlocked', (data: { chamadoId: number }) => {
+    setLockedChamados(prev => 
+      prev.filter(lock => lock.chamadoId !== data.chamadoId)
+    );
+    setTimers(prev => 
+      prev.filter(timer => timer.chamadoId !== data.chamadoId)
+    );
+  });
+
+  // Chamado foi atualizado por outro usuário - CORRIGIDO
+  socket.on('chamado_changed', (updatedChamado: Chamado) => {
+    setChamados(prev => 
+      prev.map(chamado => 
+        chamado.cha_id === updatedChamado.cha_id ? updatedChamado : chamado
+      )
+    );
+  });
+
+  // Timer iniciado
+  socket.on('timer_started', (data: Timer) => {
+    setTimers(prev => {
+      const filtered = prev.filter(timer => timer.chamadoId !== data.chamadoId);
+      return [...filtered, { ...data, seconds: 0 }];
     });
+  });
 
-    // Chamado foi atualizado por outro usuário
-    socket.on('chamado_changed', (updatedChamado: Chamado) => {
-      setChamados(prev => 
-        prev.map(chamado => 
-          chamado.cha_id === updatedChamado.cha_id ? updatedChamado : chamado
-        )
-      );
-    });
+  // Timer atualizado
+  socket.on('timer_updated', (data: { chamadoId: number; seconds: number }) => {
+    setTimers(prev => 
+      prev.map(timer => 
+        timer.chamadoId === data.chamadoId 
+          ? { ...timer, seconds: data.seconds }
+          : timer
+      )
+    );
+  });
 
-    // Timer iniciado
-    socket.on('timer_started', (data: Timer) => {
-      setTimers(prev => {
-        const filtered = prev.filter(timer => timer.chamadoId !== data.chamadoId);
-        return [...filtered, { ...data, seconds: 0 }];
-      });
-    });
-
-    // Timer atualizado
-    socket.on('timer_updated', (data: { chamadoId: number; seconds: number }) => {
-      setTimers(prev => 
-        prev.map(timer => 
-          timer.chamadoId === data.chamadoId 
-            ? { ...timer, seconds: data.seconds }
-            : timer
-        )
-      );
-    });
-
-    return () => {
-      socket.off('chamado_locked');
-      socket.off('chamado_unlocked');
-      socket.off('chamado_changed');
-      socket.off('timer_started');
-      socket.off('timer_updated');
-    };
-  }, [socket]);
+  return () => {
+    socket.off('chamado_locked');
+    socket.off('chamado_unlocked');
+    socket.off('chamado_changed');
+    socket.off('timer_started');
+    socket.off('timer_updated');
+  };
+}, [socket]);
 
   const isLocked = useCallback((chamadoId: number) => {
     return lockedChamados.find(lock => lock.chamadoId === chamadoId);

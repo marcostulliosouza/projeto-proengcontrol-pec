@@ -109,6 +109,7 @@ export interface ButtonProps {
   type?: 'button' | 'submit' | 'reset';
   children: React.ReactNode;
   className?: string;
+  title?: string; // Adicionar esta linha
 }
 
 export interface CardProps {

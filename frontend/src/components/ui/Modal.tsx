@@ -8,6 +8,7 @@ interface ModalProps {
   children: React.ReactNode;
   size?: 'sm' | 'md' | 'lg' | 'xl';
   showCloseButton?: boolean;
+  preventClose?: boolean; // NOVA PROP
 }
 
 const Modal: React.FC<ModalProps> = ({
@@ -17,11 +18,12 @@ const Modal: React.FC<ModalProps> = ({
   children,
   size = 'md',
   showCloseButton = true,
+  preventClose = false, // NOVA PROP
 }) => {
-  // Fechar modal com ESC
+  // Fechar modal com ESC - MODIFICADO
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && !preventClose) { // Só fecha se não estiver bloqueado
         onClose();
       }
     };
@@ -35,7 +37,7 @@ const Modal: React.FC<ModalProps> = ({
       document.removeEventListener('keydown', handleEscape);
       document.body.style.overflow = 'unset';
     };
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, preventClose]);
 
   if (!isOpen) return null;
 
@@ -48,10 +50,10 @@ const Modal: React.FC<ModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
-      {/* Overlay */}
+      {/* Overlay - MODIFICADO para não fechar se preventClose */}
       <div 
         className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
-        onClick={onClose}
+        onClick={preventClose ? undefined : onClose} // Só fecha se não estiver bloqueado
       />
       
       {/* Modal */}
@@ -65,7 +67,7 @@ const Modal: React.FC<ModalProps> = ({
             <h3 className="text-lg font-semibold text-secondary-900">
               {title}
             </h3>
-            {showCloseButton && (
+            {showCloseButton && !preventClose && ( // Só mostra botão se não estiver bloqueado
               <Button
                 variant="secondary"
                 size="sm"
@@ -76,6 +78,12 @@ const Modal: React.FC<ModalProps> = ({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </Button>
+            )}
+            {preventClose && ( // Mostrar indicador quando bloqueado
+              <div className="flex items-center space-x-2 text-orange-600">
+                <span className="w-3 h-3 bg-orange-500 rounded-full animate-pulse"></span>
+                <span className="text-sm font-medium">Atendimento em andamento</span>
+              </div>
             )}
           </div>
 

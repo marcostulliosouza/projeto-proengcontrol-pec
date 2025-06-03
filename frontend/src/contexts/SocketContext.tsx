@@ -1,14 +1,26 @@
-import React, { createContext, useContext, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react'; // Adicionar useState
 import { io, Socket } from 'socket.io-client';
 import { useAuth } from './AuthContext';
+import type { Chamado } from '../types'; 
+
+interface AttendanceData {
+  chamadoId: number;
+  userId: number;
+  userName: string;
+  startTime: string;
+}
 
 interface SocketContextType {
   socket: Socket | null;
   lockChamado: (chamadoId: number) => Promise<boolean>;
   unlockChamado: (chamadoId: number) => void;
-  emitChamadoUpdate: (chamado: { id: number; status: string; additionalData?: Record<string, unknown> }) => void;
+  emitChamadoUpdate: (chamado: Chamado) => void;
   startTimer: (chamadoId: number) => void;
   updateTimer: (chamadoId: number, seconds: number) => void;
+  startAttendance: (chamadoId: number) => Promise<AttendanceData | null>;
+  finishAttendance: () => void;
+  isUserInAttendance: boolean;
+  currentAttendance: AttendanceData | null;
 }
 
 const SocketContext = createContext<SocketContextType | null>(null);
@@ -20,7 +32,12 @@ interface SocketProviderProps {
 export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
   const { state } = useAuth();
   const socketRef = useRef<Socket | null>(null);
+  
+  // Estados para atendimento
+  const [isUserInAttendance, setIsUserInAttendance] = useState(false);
+  const [currentAttendance, setCurrentAttendance] = useState<AttendanceData | null>(null);
 
+  // Conectar ao WebSocket
   useEffect(() => {
     if (state.isAuthenticated && state.user) {
       // Conectar ao WebSocket
@@ -35,14 +52,39 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
         categoria: state.user.categoria
       });
 
+      // Escutar eventos de atendimento
+      socket.on('user_in_attendance', (data) => {
+        setIsUserInAttendance(true);
+        setCurrentAttendance(data);
+      });
+
+      socket.on('attendance_started', (data: AttendanceData) => {
+        setIsUserInAttendance(true);
+        setCurrentAttendance(data);
+      });
+
+      socket.on('attendance_finished', () => {
+        setIsUserInAttendance(false);
+        setCurrentAttendance(null);
+      });
+
+      socket.on('attendance_blocked', (data) => {
+        alert(data.reason);
+      });
+
       // Cleanup na desconexão
       return () => {
+        socket.off('user_in_attendance');
+        socket.off('attendance_started');
+        socket.off('attendance_finished');
+        socket.off('attendance_blocked');
         socket.disconnect();
         socketRef.current = null;
       };
     }
   }, [state.isAuthenticated, state.user]);
 
+  // Implementar todas as funções necessárias
   const lockChamado = (chamadoId: number): Promise<boolean> => {
     return new Promise((resolve) => {
       if (!socketRef.current || !state.user) {
@@ -52,7 +94,6 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
 
       const socket = socketRef.current;
       
-      // Timeout para lock
       const timeout = setTimeout(() => {
         resolve(false);
       }, 5000);
@@ -81,7 +122,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     }
   };
 
-  const emitChamadoUpdate = (chamado: { id: number; status: string; additionalData?: Record<string, unknown> }) => {
+  const emitChamadoUpdate = (chamado: Chamado) => {
     if (socketRef.current) {
       socketRef.current.emit('chamado_updated', chamado);
     }
@@ -98,8 +139,51 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
   };
 
   const updateTimer = (chamadoId: number, seconds: number) => {
-    if (socketRef.current) {
-      socketRef.current.emit('timer_update', { chamadoId, seconds });
+    if (socketRef.current && state.user) {
+      socketRef.current.emit('timer_update', { 
+        chamadoId, 
+        seconds,
+        userId: state.user.id
+      });
+    }
+  };
+
+  const startAttendance = (chamadoId: number): Promise<AttendanceData | null> => {
+    return new Promise((resolve) => {
+      if (!socketRef.current || !state.user) {
+        resolve(null);
+        return;
+      }
+
+      const socket = socketRef.current;
+      
+      const timeout = setTimeout(() => {
+        resolve(null);
+      }, 5000);
+
+      socket.once('attendance_started', (data: AttendanceData) => {
+        clearTimeout(timeout);
+        resolve(data);
+      });
+
+      socket.once('attendance_blocked', () => {
+        clearTimeout(timeout);
+        resolve(null);
+      });
+
+      socket.emit('start_attendance', {
+        chamadoId,
+        userId: state.user.id,
+        userName: state.user.nome
+      });
+    });
+  };
+
+  const finishAttendance = () => {
+    if (socketRef.current && state.user) {
+      socketRef.current.emit('finish_attendance', {
+        userId: state.user.id
+      });
     }
   };
 
@@ -110,6 +194,10 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     emitChamadoUpdate,
     startTimer,
     updateTimer,
+    startAttendance,
+    finishAttendance,
+    isUserInAttendance,
+    currentAttendance,
   };
 
   return (
