@@ -4,6 +4,10 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
 import 'module-alias/register';
+
+// Importar rotas e middlewares
+import authRoutes from './routes/authRoutes';
+
 import { testConnection } from './config/database';
 import { errorHandler } from './middlewares/errorHandler';
 
@@ -63,6 +67,9 @@ app.get(API_PREFIX, (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+
+// Rotas da API
+app.use(`${API_PREFIX}/auth`, authRoutes);
 
 // TODO: Aqui vamos adicionar as rotas quando criarmos
 // app.use(`${API_PREFIX}/auth`, authRoutes);

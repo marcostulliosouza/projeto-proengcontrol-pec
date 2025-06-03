@@ -1,7 +1,6 @@
-import { executeQuery } from '@/config/database';
-import { User } from '@/types';
-import bcrypt from 'bcryptjs';
-
+import { executeQuery } from '../config/database';
+import { User } from '../types';
+import crypto from 'crypto';
 export class UserModel {
   // Buscar usuário por login
   static async findByLogin(login: string): Promise<User | null> {
@@ -47,21 +46,21 @@ export class UserModel {
     }
   }
 
-  // Verificar senha
+  // Verificar senha (MD5)
   static async verifyPassword(plainPassword: string, hashedPassword: string): Promise<boolean> {
     try {
-      return await bcrypt.compare(plainPassword, hashedPassword);
+      const md5hash = crypto.createHash('md5').update(plainPassword).digest('hex');
+      return md5hash === hashedPassword;
     } catch (error) {
       console.error('Erro ao verificar senha:', error);
       throw error;
     }
   }
 
-  // Hash da senha
+  // Hash da senha (MD5)
   static async hashPassword(password: string): Promise<string> {
     try {
-      const rounds = parseInt(process.env.BCRYPT_ROUNDS || '12');
-      return await bcrypt.hash(password, rounds);
+      return crypto.createHash('md5').update(password).digest('hex');
     } catch (error) {
       console.error('Erro ao fazer hash da senha:', error);
       throw error;

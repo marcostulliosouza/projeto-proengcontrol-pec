@@ -1,8 +1,8 @@
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
-import { UserModel } from '@/models/User';
-import { ApiResponse, AuthUser } from '@/types';
-import { asyncHandler } from '@/middleware/errorHandler';
+import { UserModel } from '../models/User';
+import { ApiResponse, AuthUser } from '../types';
+import { asyncHandler } from '../middlewares/errorHandler';
 
 export const login = asyncHandler(async (req: Request, res: Response) => {
   const { login, senha } = req.body;
@@ -54,8 +54,7 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
 
   const token = jwt.sign(
     authUser,
-    process.env.JWT_SECRET!,
-    { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
+    process.env.JWT_SECRET as string
   );
 
   res.json({
