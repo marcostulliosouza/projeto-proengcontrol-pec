@@ -10,9 +10,9 @@ export interface DatabaseConfig {
   password: string;
   database: string;
   connectionLimit: number;
-  acquireTimeout: number;
-  timeout: number;
-  reconnect: boolean;
+  waitForConnections: boolean;
+  queueLimit: number;
+  timezone: string;
 }
 
 const dbConfig: DatabaseConfig = {
@@ -22,18 +22,13 @@ const dbConfig: DatabaseConfig = {
   password: process.env.DB_PASSWORD || '',
   database: process.env.DB_NAME || 'better_call_test',
   connectionLimit: 10,
-  acquireTimeout: 60000,
-  timeout: 60000,
-  reconnect: true,
-};
-
-// Pool de conexões para melhor performance
-export const pool = mysql.createPool({
-  ...dbConfig,
   waitForConnections: true,
   queueLimit: 0,
   timezone: '-03:00', // Horário de Brasília
-});
+};
+
+// Pool de conexões para melhor performance
+export const pool = mysql.createPool(dbConfig);
 
 // Função para testar conexão
 export const testConnection = async (): Promise<boolean> => {
