@@ -7,6 +7,7 @@ import 'module-alias/register';
 
 // Importar rotas e middlewares
 import authRoutes from './routes/authRoutes';
+import dispositivoRoutes from './routes/dispositivoRoutes';
 
 import { testConnection } from './config/database';
 import { errorHandler } from './middlewares/errorHandler';
@@ -70,6 +71,7 @@ app.get(API_PREFIX, (req, res) => {
 
 // Rotas da API
 app.use(`${API_PREFIX}/auth`, authRoutes);
+app.use(`${API_PREFIX}/dispositivos`, dispositivoRoutes);
 
 // TODO: Aqui vamos adicionar as rotas quando criarmos
 // app.use(`${API_PREFIX}/auth`, authRoutes);
