@@ -105,10 +105,11 @@ setInterval(async () => {
 
 // Configuração do WebSocket
 io.on('connection', (socket) => {
-  console.log('Cliente conectado:', socket.id);
+  console.log('🔌 Cliente conectado:', socket.id);
   
   // Usuário se autentica
   socket.on('authenticate', async (userData) => {
+    console.log('🔐 Usuário autenticando:', userData);
     activeUsers.set(socket.id, {
       ...userData,
       socketId: socket.id,

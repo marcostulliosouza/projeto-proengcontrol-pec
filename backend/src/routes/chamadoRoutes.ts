@@ -14,8 +14,55 @@ import {
 } from '../controllers/chamadoController';
 import { AtendimentoAtivoModel } from '../models/AtendimentoAtivo';
 import { authenticateToken, requireRole } from '../middlewares/auth';
+import { executeQuery } from '../config/database';
 
 const router = Router();
+
+// ROTA PÚBLICA para debug (MOVER para antes da autenticação)
+router.get('/atendimentos-ativos', async (req, res) => {
+  try {
+    const atendimentos = await AtendimentoAtivoModel.listarAtivos();
+    res.json({
+      success: true,
+      data: atendimentos,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Erro ao buscar atendimentos:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao buscar atendimentos ativos',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// ROTA para limpar atendimentos órfãos (TEMPORÁRIA)
+router.get('/limpar-orfaos', async (req, res) => {
+  try {
+    const query = `
+      UPDATE atendimentos_chamados 
+      SET atc_data_hora_termino = NOW() 
+      WHERE atc_data_hora_termino IS NULL 
+      AND atc_data_hora_inicio < DATE_SUB(NOW(), INTERVAL 1 HOUR)
+    `;
+    
+    const result = await executeQuery(query);
+    
+    res.json({
+      success: true,
+      message: `${result.affectedRows} atendimentos órfãos limpos`,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao limpar órfãos',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 
 // Todas as rotas requerem autenticação
 router.use(authenticateToken);
@@ -32,23 +79,23 @@ router.get('/status', getStatusChamado);
 // GET /api/v1/chamados/acoes - Obter ações
 router.get('/acoes', getAcoes);
 
-// GET /api/v1/chamados/atendimentos-ativos - MOVER PARA CIMA
-router.get('/atendimentos-ativos', async (req, res) => {
-  try {
-    const atendimentos = await AtendimentoAtivoModel.listarAtivos();
-    res.json({
-      success: true,
-      data: atendimentos,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Erro ao buscar atendimentos ativos',
-      timestamp: new Date().toISOString()
-    });
-  }
-});
+// // GET /api/v1/chamados/atendimentos-ativos - MOVER PARA CIMA
+// router.get('/atendimentos-ativos', async (req, res) => {
+//   try {
+//     const atendimentos = await AtendimentoAtivoModel.listarAtivos();
+//     res.json({
+//       success: true,
+//       data: atendimentos,
+//       timestamp: new Date().toISOString()
+//     });
+//   } catch (error) {
+//     res.status(500).json({
+//       success: false,
+//       message: 'Erro ao buscar atendimentos ativos',
+//       timestamp: new Date().toISOString()
+//     });
+//   }
+// });
 
 // GET /api/v1/chamados/produtos/:clienteId - Obter produtos por cliente
 router.get('/produtos/:clienteId', getProdutosByCliente);

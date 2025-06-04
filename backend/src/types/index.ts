@@ -1,4 +1,5 @@
 import { Request } from 'express';
+import React from 'react';
 
 // Tipos básicos da aplicação
 export interface User {
@@ -41,9 +42,12 @@ export interface Dispositivo {
   dis_extensao_imagem: string | null;
   dis_posicao_estoque: string | null;
   dis_local: string | null;
+  // Campos relacionados (JOINs)
+  cliente_nome?: string;
+  status_descricao?: string;
 }
 
-// Tipos para Chamados
+// Tipos para Chamados (mantendo nomes do banco)
 export interface Chamado {
   cha_id: number;
   cha_tipo: number;
@@ -52,13 +56,25 @@ export interface Chamado {
   cha_DT: string;
   cha_descricao: string;
   cha_status: number;
-  cha_data_hora_abertura: Date;
-  cha_data_hora_termino: Date | null;
-  cha_data_hora_atendimento: Date | null;
+  cha_data_hora_abertura: string;
+  cha_data_hora_termino: string | null;
+  cha_data_hora_atendimento: string | null;
   cha_acao: number | null;
   cha_operador: string;
   cha_visualizado: number;
   cha_plano: number;
+  cha_local?: number;
+  // Campos relacionados (JOINs)
+  tipo_chamado?: string;
+  status_chamado?: string;
+  cliente_nome?: string;
+  produto_nome?: string;
+  local_chamado?: string;
+  colaborador_nome?: string;
+  acao_descricao?: string;
+  // Campos calculados
+  duracao_total?: number;
+  duracao_atendimento?: number;
 }
 
 // Tipos para Manutenção
@@ -77,6 +93,22 @@ export interface LogManutencao {
   lmd_observacao: string | null;
   lmd_colaborador: number;
   lmd_status: number;
+}
+
+// Tipos para Atendimentos Ativos
+export interface AtendimentoAtivo {
+  atc_id: number;
+  atc_chamado: number;
+  atc_colaborador: number;
+  atc_data_hora_inicio: string;
+  atc_data_hora_termino: string | null;
+  // Campos calculados/relacionados
+  tempo_decorrido?: number;
+  colaborador_nome?: string;
+  chamado_descricao?: string;
+  cliente_nome?: string;
+  cha_DT?: string;
+  tipo_chamado?: string;
 }
 
 // Tipos para API Response
@@ -117,6 +149,77 @@ export interface DashboardStats {
   };
 }
 
+// Tipos para componentes UI
+export interface ButtonProps {
+  variant?: 'primary' | 'secondary' | 'danger' | 'warning' | 'success';
+  size?: 'sm' | 'md' | 'lg';
+  disabled?: boolean;
+  loading?: boolean;
+  onClick?: () => void;
+  type?: 'button' | 'submit' | 'reset';
+  children: React.ReactNode;
+  className?: string;
+  title?: string;
+}
+
+export interface CardProps {
+  title?: string;
+  children: React.ReactNode;
+  className?: string;
+  shadow?: boolean;
+}
+
+export interface LoadingProps {
+  size?: 'sm' | 'md' | 'lg';
+  text?: string;
+}
+
+// Tipos para navegação
+export interface MenuItem {
+  id: string;
+  label: string;
+  icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+  path: string;
+  requiredCategory?: number[];
+}
+
+// Tipos para filtros e paginação (Frontend)
+export interface PaginationInfo {
+  currentPage: number;
+  totalPages: number;
+  totalItems: number;
+  itemsPerPage: number;
+}
+
+export interface FilterState {
+  search: string;
+  status?: number;
+  categoria?: number;
+  cliente?: number;
+  dataInicio?: string;
+  dataFim?: string;
+}
+
+// Tipos para autenticação (Frontend)
+export interface LoginCredentials {
+  login: string;
+  senha: string;
+}
+
+export interface AuthState {
+  isAuthenticated: boolean;
+  user: User | null;
+  token: string | null;
+  loading: boolean;
+}
+
+// Tipos para erros
+export interface ApiError {
+  message: string;
+  status?: number;
+  code?: string;
+}
+
 // Enum para Status de Dispositivos
 export enum StatusDispositivo {
   ATIVO = 1,
@@ -124,7 +227,7 @@ export enum StatusDispositivo {
   MANUTENCAO = 3
 }
 
-// Enum para Status de Chamados
+// Enum para Status de Chamados  
 export enum StatusChamado {
   ABERTO = 1,
   EM_ANDAMENTO = 2,
@@ -136,5 +239,126 @@ export enum CategoriaColaborador {
   TECNICO = 1,
   ENGENHEIRO = 2,
   SUPERVISOR = 3,
-  ADMINISTRADOR = 4
+  ADMINISTRADOR = 4,
+  GERENTE = 5
+}
+
+// Tipos para tabelas auxiliares
+export interface TipoChamado {
+  tch_id: number;
+  tch_descricao: string;
+}
+
+export interface StatusChamadoType {
+  stc_id: number;
+  stc_descricao: string;
+}
+
+export interface Cliente {
+  cli_id: number;
+  cli_nome: string;
+  cli_ativo?: number;
+}
+
+export interface Produto {
+  pro_id: number;
+  pro_nome: string;
+  pro_cliente?: number;
+  pro_ativo?: number;
+}
+
+export interface Acao {
+  ach_id: number;
+  ach_descricao: string;
+  ach_detrator?: number;
+}
+
+export interface Colaborador {
+  col_id: number;
+  col_nome: string;
+  col_login: string;
+  col_categoria: number;
+  col_ativo: number;
+}
+
+export interface LocalChamado {
+  loc_id: number;
+  loc_nome: string;
+  loc_descricao?: string;
+}
+
+// Tipos para indicadores
+export interface Indicador {
+  ind_id: number;
+  ind_data: string;
+  ind_minutos_diario: number;
+  ind_atendimento_diario: number;
+  ind_atraso_diario: number;
+  ind_minutos_semanal: number;
+  ind_atendimento_semanal: number;
+  ind_atraso_semanal: number;
+  ind_minutos_mensal: number;
+  ind_atendimento_mensal: number;
+  ind_atraso_mensal: number;
+}
+
+// Tipos para real-time (WebSocket)
+export interface Timer {
+  chamadoId: number;
+  seconds: number;
+  startedAt: string;
+  startedBy: string;
+  userId: number;
+  userName: string;
+}
+
+export interface ChamadoLock {
+  chamadoId: number;
+  lockedBy: {
+    userId: number;
+    userName: string;
+  };
+}
+
+// Tipos para formulários
+export interface ChamadoFormData {
+  cha_tipo: number;
+  cha_cliente: number;
+  cha_produto?: number;
+  cha_DT: string;
+  cha_descricao: string;
+  cha_local?: number;
+}
+
+export interface DispositivoFormData {
+  dis_descricao: string;
+  dis_cliente?: number;
+  dis_codigo_sap?: string;
+  dis_status: number;
+  dis_observacao?: string;
+  dis_ciclos_de_vida: number;
+  dis_local?: string;
+}
+
+// Tipos para relatórios
+export interface RelatorioParams {
+  dataInicio: string;
+  dataFim: string;
+  cliente?: number;
+  produto?: string;
+  operador?: string;
+  status?: number;
+  tipo?: number;
+  dentroPlano?: boolean;
+  foraPlano?: boolean;
+  comDetrator?: boolean;
+  semDetrator?: boolean;
+}
+
+export interface EstatisticaAtendimento {
+  total_atendimentos: number;
+  tempo_medio_segundos: number;
+  tempo_minimo_segundos: number;
+  tempo_maximo_segundos: number;
+  colaboradores_distintos: number;
 }

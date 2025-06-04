@@ -40,17 +40,39 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
 
   // Conectar ao WebSocket
   useEffect(() => {
-    if (state.isAuthenticated && state.user && socketRef.current) {
-      // Conectar ao WebSocket
-      socketRef.current = io(import.meta.env.VITE_API_URL?.replace('/api/v1', '') || 'http://localhost:3001');
+    if (state.isAuthenticated && state.user) {
+      console.log('=== CONECTANDO WEBSOCKET ===');
+      console.log('User:', state.user);
       
+      // Conectar ao WebSocket
+      const socketUrl = import.meta.env.VITE_API_URL?.replace('/api/v1', '') || 'http://localhost:3001';
+      console.log('Socket URL:', socketUrl);
+      
+      socketRef.current = io(socketUrl);
       const socket = socketRef.current;
 
-      // Autenticar usuário
-      socket.emit('authenticate', {
-        id: state.user.id,
-        nome: state.user.nome,
-        categoria: state.user.categoria
+      socket.on('connect', () => {
+        console.log('✅ WebSocket conectado! Socket ID:', socket.id);
+        
+        // Autenticar usuário
+        if (state.user) {
+          socket.emit('authenticate', {
+            id: state.user.id,
+            nome: state.user.nome,
+            categoria: state.user.categoria
+          });
+          console.log('📡 Dados de autenticação enviados');
+        } else {
+          console.error('Usuário não autenticado');
+        }
+      });
+
+      socket.on('disconnect', () => {
+        console.log('❌ WebSocket desconectado');
+      });
+
+      socket.on('connect_error', (error) => {
+        console.error('🔥 Erro de conexão WebSocket:', error);
       });
 
       // Escutar eventos de atendimento
@@ -100,6 +122,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
         socket.off('timers_sync');
         socket.off('active_attendances_updated');
         socket.off('user_cancelled_attendance');
+        console.log('🧹 Limpando conexão WebSocket');
         socket.disconnect();
         socketRef.current = null;
       };
@@ -172,7 +195,21 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
 
   const startAttendance = (chamadoId: number): Promise<AttendanceData | null> => {
     return new Promise((resolve) => {
+      console.log('=== INICIANDO STARTATTENDANCE ===');
+      console.log('Socket atual:', socketRef.current);
+      console.log('Socket conectado:', socketRef.current?.connected);
+      console.log('User:', state.user);
+      
       if (!socketRef.current || !state.user) {
+        console.error('❌ Socket ou usuário não disponível');
+        console.error('Socket:', !!socketRef.current);
+        console.error('User:', !!state.user);
+        resolve(null);
+        return;
+      }
+
+      if (!socketRef.current.connected) {
+        console.error('❌ Socket não está conectado');
         resolve(null);
         return;
       }
@@ -180,24 +217,34 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       const socket = socketRef.current;
       
       const timeout = setTimeout(() => {
+        console.error('⏰ Timeout ao iniciar atendimento');
         resolve(null);
-      }, 5000);
+      }, 10000);
+
+      // Limpar listeners anteriores
+      socket.off('attendance_started');
+      socket.off('attendance_blocked');
 
       socket.once('attendance_started', (data: AttendanceData) => {
+        console.log('✅ Atendimento iniciado com sucesso:', data);
         clearTimeout(timeout);
         resolve(data);
       });
 
-      socket.once('attendance_blocked', () => {
+      socket.once('attendance_blocked', (error: { message?: string; reason?: string }) => {
+        console.error('🚫 Atendimento bloqueado:', error);
         clearTimeout(timeout);
         resolve(null);
       });
 
-      socket.emit('start_attendance', {
+      const emitData = {
         chamadoId,
         userId: state.user.id,
         userName: state.user.nome
-      });
+      };
+      
+      console.log('📤 Emitindo start_attendance:', emitData);
+      socket.emit('start_attendance', emitData);
     });
   };
 
