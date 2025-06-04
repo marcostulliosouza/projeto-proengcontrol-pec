@@ -108,8 +108,9 @@ export class ChamadoModel {
         
         ${whereClause}
         ORDER BY 
-          c.cha_status ASC,
-          c.cha_data_hora_abertura DESC
+          c.cha_status DESC,
+          duracao_total DESC,
+          duracao_atendimento DESC
         LIMIT ${pagination.limit} OFFSET ${pagination.offset}
       `;
 
