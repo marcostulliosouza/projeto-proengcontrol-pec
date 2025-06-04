@@ -46,7 +46,7 @@ const Table = <T extends Record<string, unknown>>({
 
   return (
     <div className="bg-white rounded-lg border border-secondary-200 overflow-hidden">
-      <div className="overflow-x-auto">
+      <div className="table-container">
         <table className="min-w-full divide-y divide-secondary-200">
           <thead className="bg-secondary-50">
             <tr>

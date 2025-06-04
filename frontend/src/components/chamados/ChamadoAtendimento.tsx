@@ -237,12 +237,14 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
   };
 
   const getTimerColor = () => {
+    if (timer < 0) return 'text-blue-600'; 
     if (timer > 30 * 60) return 'text-red-600'; // Mais de 30 minutos
     if (timer > 15 * 60) return 'text-yellow-600'; // Mais de 15 minutos
     return 'text-blue-600'; // Normal
   };
 
   const getTimerBackgroundColor = () => {
+    if (timer < 0) return 'bg-blue-50 border-blue-200'; // Timer negativo
     if (timer > 30 * 60) return 'bg-red-50 border-red-200';
     if (timer > 15 * 60) return 'bg-yellow-50 border-yellow-200';
     return 'bg-blue-50 border-blue-200';

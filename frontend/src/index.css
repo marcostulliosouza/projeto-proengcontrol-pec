@@ -143,3 +143,41 @@ code {
 .status-secondary {
   @apply bg-secondary-100 text-secondary-800;
 }
+
+.table-container {
+  position: relative;
+  overflow-x: auto;
+  border-radius: 0.5rem;
+  border: 1px solid #e5e7eb;
+}
+
+.table-container::-webkit-scrollbar {
+  height: 8px;
+}
+
+.table-container::-webkit-scrollbar-track {
+  background: #f3f4f6;
+  border-radius: 4px;
+}
+
+.table-container::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 4px;
+}
+
+.table-container::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+/* Sombra para indicar que tem scroll horizontal */
+.table-container::after {
+  content: '';
+  position: sticky;
+  right: 0;
+  top: 0;
+  width: 20px;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(0,0,0,0.05));
+  pointer-events: none;
+  z-index: 1;
+}
