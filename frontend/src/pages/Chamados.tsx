@@ -3,7 +3,8 @@ import { Card, Table, Button, Input, Select, Pagination, Modal } from '../compon
 import { ChamadoService, type TipoChamado, type StatusChamado, type Cliente } from '../services/chamadoService';
 import { useSocket } from '../contexts/SocketContext';
 import { useChamadosRealTime } from '../hooks/useChamadosRealTime';
-import type { Chamado, FilterState, PaginationInfo, Acao } from '../types';
+import { useGlobalAttendance } from '../hooks/useGlobalAttendance';
+import type { Chamado, FilterState, PaginationInfo } from '../types';
 import ChamadoForm from '../components/forms/ChamadoForm';
 import ChamadoAtendimento from '../components/chamados/ChamadoAtendimento';
 
@@ -31,20 +32,13 @@ const Chamados: React.FC = () => {
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [selectedChamado, setSelectedChamado] = useState<Chamado | null>(null);
   const [atendimentoModalOpen, setAtendimentoModalOpen] = useState(false);
-  const [chamadoAtendimento, setChamadoAtendimento] = useState<Chamado | null>(null);
-
-  const [finalizarModalOpen, setFinalizarModalOpen] = useState(false);
-  const [chamadoParaFinalizar, setChamadoParaFinalizar] = useState<Chamado | null>(null);
-  const [acoesFinalizar, setAcoesFinalizar] = useState<Acao[]>([]);
-  const [selectedAcaoFinalizar, setSelectedAcaoFinalizar] = useState<number | undefined>();
-  // const [loadingFinalizar, setLoadingFinalizar] = useState(false);
 
   // Dados auxiliares
   const [tipos, setTipos] = useState<TipoChamado[]>([]);
   const [status, setStatus] = useState<StatusChamado[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
 
-  // Hooks para tempo real
+  // Hooks
   const { 
     startAttendance,
     isUserInAttendance,
@@ -58,67 +52,16 @@ const Chamados: React.FC = () => {
     getTimer
   } = useChamadosRealTime(initialChamados);
 
-  // Função para abrir modal de finalização direto da tabela
-const handleFinalizarChamadoDireto = async (chamado: Chamado) => {
-  try {
-    // Verificar se realmente é o usuário que está atendendo
-    const timer = getTimer(chamado.cha_id);
-    if (!timer || timer.userId !== currentAttendance?.userId) {
-      alert('Você não está atendendo este chamado');
-      return;
+  // Hook simplificado
+  const { isInAttendance, attendanceChamado } = useGlobalAttendance();
+
+  // EFEITO SIMPLES: Se está em atendimento e modal não está aberto, abrir
+  useEffect(() => {
+    if (isInAttendance && attendanceChamado && !atendimentoModalOpen) {
+      console.log('🔄 Abrindo modal de atendimento');
+      setAtendimentoModalOpen(true);
     }
-
-    // Carregar ações se ainda não carregou
-    if (acoesFinalizar.length === 0) {
-      const acoesData = await ChamadoService.getAcoes();
-      setAcoesFinalizar(acoesData);
-    }
-
-    setChamadoParaFinalizar(chamado);
-    setFinalizarModalOpen(true);
-  } catch (error) {
-    console.error('Erro ao abrir modal de finalização:', error);
-    alert('Erro ao abrir modal de finalização');
-  }
-};
-
-  // // Função para finalizar chamado direto
-  // const handleConfirmarFinalizacao = async () => {
-  //   if (!chamadoParaFinalizar || !selectedAcaoFinalizar) {
-  //     alert('Selecione uma ação para finalizar o chamado');
-  //     return;
-  //   }
-
-  //   try {
-  //     setLoadingFinalizar(true);
-  //     console.log(`🏁 Finalizando chamado ${chamadoParaFinalizar.cha_id} com ação ${selectedAcaoFinalizar}`);
-      
-  //     await ChamadoService.finalizarChamado(chamadoParaFinalizar.cha_id, selectedAcaoFinalizar);
-      
-  //     // Buscar chamado atualizado
-  //     const updatedChamado = await ChamadoService.getChamado(chamadoParaFinalizar.cha_id);
-  //     handleChamadoUpdated(updatedChamado);
-      
-  //     // Fechar modal
-  //     setFinalizarModalOpen(false);
-  //     setChamadoParaFinalizar(null);
-  //     setSelectedAcaoFinalizar(undefined);
-      
-  //     console.log('✅ Chamado finalizado com sucesso da tabela');
-      
-  //   } catch (error) {
-  //     console.error('Erro ao finalizar chamado:', error);
-  //     alert('Erro ao finalizar chamado');
-  //   } finally {
-  //     setLoadingFinalizar(false);
-  //   }
-  // };
-
-  const handleCancelarFinalizacao = () => {
-    setFinalizarModalOpen(false);
-    setChamadoParaFinalizar(null);
-    setSelectedAcaoFinalizar(undefined);
-  };
+  }, [isInAttendance, attendanceChamado, atendimentoModalOpen]);
 
   // Carregar dados auxiliares
   useEffect(() => {
@@ -140,33 +83,6 @@ const handleFinalizarChamadoDireto = async (chamado: Chamado) => {
     loadAuxData();
   }, []);
 
-  // Verificar se usuário tem atendimento ativo ao carregar página
-  useEffect(() => {
-    if (isUserInAttendance && currentAttendance && !atendimentoModalOpen) {
-      console.log('🔍 Verificando se deve abrir modal de atendimento...');
-      
-      // Verificar se o chamado ainda existe na lista atual
-      const chamadoExiste = chamados.find(c => c.cha_id === currentAttendance.chamadoId);
-      
-      if (chamadoExiste) {
-        console.log('✅ Chamado encontrado, abrindo modal de atendimento');
-        const loadActiveAttendance = async () => {
-          try {
-            const chamado = await ChamadoService.getChamado(currentAttendance.chamadoId);
-            setChamadoAtendimento(chamado);
-            setAtendimentoModalOpen(true);
-          } catch (error) {
-            console.error('Erro ao recuperar atendimento ativo:', error);
-          }
-        };
-
-        loadActiveAttendance();
-      } else {
-        console.log('⚠️ Chamado não encontrado na lista atual, não abrindo modal');
-      }
-    }
-  }, [isUserInAttendance, currentAttendance, atendimentoModalOpen, chamados]);
-
   // Carregar chamados
   const loadChamados = useCallback(async (page = 1, showLoading = true) => {
     try {
@@ -181,17 +97,18 @@ const handleFinalizarChamadoDireto = async (chamado: Chamado) => {
     }
   }, [filters]);
 
+  // Auto-refresh
   useEffect(() => {
     const interval = setInterval(() => {
       loadChamados(pagination.currentPage, false);
     }, 60000);
-
     return () => clearInterval(interval);
-  }, [pagination.currentPage, filters, loadChamados]);
+  }, [pagination.currentPage, loadChamados]);
 
+  // Carregar na inicialização
   useEffect(() => {
     loadChamados();
-  }, [filters, loadChamados]);
+  }, [loadChamados]);
 
   const handleSearch = (value: string) => {
     setFilters({ ...filters, search: value });
@@ -211,8 +128,15 @@ const handleFinalizarChamadoDireto = async (chamado: Chamado) => {
   };
 
   const handleViewChamado = async (chamado: Chamado) => {
-    setSelectedChamado(chamado);
-    setDetailModalOpen(true);
+    try {
+      const chamadoAtualizado = await ChamadoService.getChamado(chamado.cha_id);
+      setSelectedChamado(chamadoAtualizado);
+      setDetailModalOpen(true);
+    } catch (error) {
+      console.error('Erro ao buscar detalhes do chamado:', error);
+      setSelectedChamado(chamado);
+      setDetailModalOpen(true);
+    }
   };
 
   const handleIniciarAtendimento = async (chamado: Chamado) => {
@@ -221,13 +145,15 @@ const handleFinalizarChamadoDireto = async (chamado: Chamado) => {
       return;
     }
 
+    const timer = getTimer(chamado.cha_id);
+    if (timer) {
+      alert(`Este chamado já está sendo atendido por ${timer.userName}`);
+      return;
+    }
+
     const attendanceData = await startAttendance(chamado.cha_id);
-    
-    if (attendanceData) {
-      setChamadoAtendimento(chamado);
-      setAtendimentoModalOpen(true);
-    } else {
-      alert('Não foi possível iniciar o atendimento. Chamado pode estar sendo atendido por outro usuário.');
+    if (!attendanceData) {
+      console.log('❌ Falha ao iniciar atendimento');
     }
   };
 
@@ -237,7 +163,6 @@ const handleFinalizarChamadoDireto = async (chamado: Chamado) => {
     setAtendimentoModalOpen(false);
     setEditingChamado(null);
     setSelectedChamado(null);
-    setChamadoAtendimento(null);
   };
 
   const handleChamadoUpdated = (updatedChamado: Chamado) => {
@@ -258,6 +183,14 @@ const handleFinalizarChamadoDireto = async (chamado: Chamado) => {
     return `${sign}${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
   };
 
+  const canStartAttendance = (chamado: Chamado) => {
+    if (chamado.cha_status !== 1) return false;
+    const timer = getTimer(chamado.cha_id);
+    if (timer) return false;
+    if (isUserInAttendance) return false;
+    return true;
+  };
+
   const columns = [
     {
       key: 'plano_icon',
@@ -265,23 +198,11 @@ const handleFinalizarChamadoDireto = async (chamado: Chamado) => {
       className: 'w-12',
       render: (_: unknown, item: Chamado) => {
         if (item.cha_plano === 1) {
-          return (
-            <span className="text-red-500 text-xl" title="Produto está contido no plano de produção">
-              🔴
-            </span>
-          );
+          return <span className="text-red-500 text-xl" title="Produto está contido no plano de produção">🔴</span>;
         } else if (item.cha_plano === 0) {
-          return (
-            <span className="text-yellow-500 text-xl" title="Produto NÃO está contido no plano de produção">
-              🟡
-            </span>
-          );
+          return <span className="text-yellow-500 text-xl" title="Produto NÃO está contido no plano de produção">🟡</span>;
         } else {
-          return (
-            <span className="text-blue-500 text-xl" title="Chamado de melhoria">
-              🔵
-            </span>
-          );
+          return <span className="text-blue-500 text-xl" title="Chamado de melhoria">🔵</span>;
         }
       }
     },
@@ -295,13 +216,7 @@ const handleFinalizarChamadoDireto = async (chamado: Chamado) => {
         const diffInMinutes = Math.floor((now - openTime) / 60000);
         
         return (
-          <span 
-            className={`font-mono font-bold ${
-              diffInMinutes > 30 ? 'text-red-600' : 
-              diffInMinutes < 0 ? 'text-blue-600' : 
-              'text-black'
-            }`}
-          >
+          <span className={`font-mono font-bold ${diffInMinutes > 30 ? 'text-red-600' : diffInMinutes < 0 ? 'text-blue-600' : 'text-black'}`}>
             {formatDuration(diffInMinutes)}
           </span>
         );
@@ -314,11 +229,11 @@ const handleFinalizarChamadoDireto = async (chamado: Chamado) => {
       render: (_: unknown, item: Chamado) => {
         const timer = getTimer(item.cha_id);
         
-        if (item.cha_status === 1) return null;
+        if (item.cha_status === 1) return <span className="text-gray-400">--:--</span>;
         
         if (timer) {
           return (
-            <span className={`font-mono font-bold ${timer.seconds > 30 * 60 ? 'text-red-600' : 'text-black'}`}>
+            <span className={`font-mono font-bold ${timer.seconds > 30 * 60 ? 'text-red-600' : 'text-blue-600'}`}>
               {formatTimer(timer.seconds)}
             </span>
           );
@@ -343,43 +258,25 @@ const handleFinalizarChamadoDireto = async (chamado: Chamado) => {
       key: 'cha_operador',
       label: 'Criado Por',
       className: 'w-32',
-      render: (value: unknown) => (
-        <span className="text-sm">{String(value)}</span>
-      )
+      render: (value: unknown) => <span className="text-sm">{String(value || 'N/A')}</span>
     },
     {
       key: 'tipo_chamado',
       label: 'Tipo de Chamado',
       className: 'w-40',
-      render: (value: unknown) => (
-        <span className="text-sm">{String(value)}</span>
-      )
-    },
-    {
-      key: 'local_chamado',
-      label: 'Local',
-      className: 'w-32',
-      render: (_: unknown, item: Chamado & { local_chamado?: string }) => (
-        <span className="text-sm">
-          {item.local_chamado || 'NÃO INFORMADO'}
-        </span>
-      )
+      render: (value: unknown) => <span className="text-sm">{String(value || 'Não informado')}</span>
     },
     {
       key: 'cliente_nome',
       label: 'Cliente',
       className: 'w-32',
-      render: (value: unknown) => (
-        <span className="text-sm">{String(value)}</span>
-      )
+      render: (value: unknown) => <span className="text-sm">{String(value || 'Não informado')}</span>
     },
     {
       key: 'produto_nome',
       label: 'Produto',
       className: 'w-32',
-      render: (value: unknown) => (
-        <span className="text-sm">{String(value) || 'N/A'}</span>
-      )
+      render: (value: unknown) => <span className="text-sm">{String(value || 'N/A')}</span>
     },
     {
       key: 'status_info',
@@ -408,40 +305,24 @@ const handleFinalizarChamadoDireto = async (chamado: Chamado) => {
       key: 'suporte_responsavel',
       label: 'Suporte Responsável',
       className: 'w-40',
-      render: (_: unknown, item: Chamado & { colaborador_nome?: string }) => {
+      render: (_: unknown, item: Chamado) => {
         const timer = getTimer(item.cha_id);
         
-        // Se o chamado está sendo atendido, mostrar o timer
         if (timer) {
+          const isMyAttendance = timer.userId === currentAttendance?.userId;
           return (
             <div className="space-y-1">
-              <span className="text-sm font-medium">{timer.userName}</span>
-              <div className="text-xs text-blue-600 font-mono">
+              <span className={`text-sm font-medium ${isMyAttendance ? 'text-blue-600' : 'text-gray-700'}`}>
+                {timer.userName} {isMyAttendance ? '(Você)' : ''}
+              </span>
+              <div className={`text-xs font-mono ${timer.seconds > 30 * 60 ? 'text-red-600' : 'text-blue-600'}`}>
                 ⏱️ {formatTimer(timer.seconds)}
               </div>
             </div>
           );
         }
 
-        // Se o status é "em andamento" mas não há timer (dados desatualizados)
-        if (item.cha_status === 2) {
-          return (
-            <div className="space-y-1">
-              <span className="text-sm font-medium text-orange-600">
-                {item.colaborador_nome || 'Carregando...'}
-              </span>
-              <div className="text-xs text-orange-600">
-                🔄 Sincronizando...
-              </div>
-            </div>
-          );
-        }
-        
-        return (
-          <span className="text-sm text-gray-500">
-            Não atribuído
-          </span>
-        );
+        return <span className="text-sm text-gray-500">Não atribuído</span>;
       }
     },
     {
@@ -449,8 +330,8 @@ const handleFinalizarChamadoDireto = async (chamado: Chamado) => {
       label: 'Descrição do Chamado',
       render: (value: unknown) => (
         <div className="max-w-xs">
-          <span className="text-sm line-clamp-2" title={String(value)}>
-            {String(value)}
+          <span className="text-sm line-clamp-2" title={String(value || '')}>
+            {String(value || '')}
           </span>
         </div>
       )
@@ -461,60 +342,52 @@ const handleFinalizarChamadoDireto = async (chamado: Chamado) => {
       render: (_: unknown, item: Chamado) => {
         const timer = getTimer(item.cha_id);
         const isBeingAttended = !!timer;
-        const userIsBusy = isUserInAttendance && currentAttendance?.chamadoId !== item.cha_id;
-        const isMyAttendance = timer?.userId === currentAttendance?.userId; // VERIFICAR SE É MEU ATENDIMENTO
-  
+        const canStart = canStartAttendance(item);
+        const isMyAttendance = timer?.userId === currentAttendance?.userId;
+
         return (
           <div className="flex space-x-1">
             <Button
               size="sm"
               variant="secondary"
               onClick={() => handleViewChamado(item)}
-              title="Ver Chamado"
+              title="Ver Detalhes"
               className="!px-2 !py-1 !text-xs"
             >
               👁️
             </Button>
             
-            {/* Botão de Atender - só aparece se chamado está aberto */}
             {item.cha_status === 1 && (
               <Button
                 size="sm"
-                variant={isBeingAttended ? "secondary" : "success"}
-                onClick={() => handleIniciarAtendimento(item)}
-                disabled={isBeingAttended || userIsBusy}
+                variant={canStart ? "success" : "secondary"}
+                onClick={() => canStart && handleIniciarAtendimento(item)}
+                disabled={!canStart}
                 title={
                   isBeingAttended
                     ? `Sendo atendido por ${timer.userName}`
-                    : userIsBusy 
+                    : isUserInAttendance 
                     ? `Você está atendendo chamado #${currentAttendance?.chamadoId}`
-                    : 'Atender Chamado'
+                    : canStart
+                    ? 'Atender Chamado'
+                    : 'Não disponível'
                 }
                 className="!px-2 !py-1 !text-xs"
               >
-                {isBeingAttended ? '🔒' : userIsBusy ? '🚫' : '🚀'}
+                {isBeingAttended ? '🔒' : canStart ? '🚀' : '🚫'}
               </Button>
             )}
 
-            {/* Botão de Finalizar - SÓ APARECE SE É MEU ATENDIMENTO */}
-            {(item.cha_status === 2 && isMyAttendance) && (
-              <Button
-                size="sm"
-                variant="danger"
-                onClick={() => handleFinalizarChamadoDireto(item)}
-                className="!px-2 !py-1 !text-xs"
-                title="Finalizar Meu Atendimento"
-              >
-                🏁
-              </Button>
-            )}
-            {/* Indicador visual para outros usuários */}
-            {(item.cha_status === 2 && !isMyAttendance && timer) && (
+            {item.cha_status === 2 && isBeingAttended && (
               <div 
-                className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded border"
-                title={`Sendo atendido por ${timer.userName}`}
+                className={`px-2 py-1 text-xs rounded border ${
+                  isMyAttendance 
+                    ? 'bg-blue-100 text-blue-700 border-blue-300' 
+                    : 'bg-gray-100 text-gray-700 border-gray-300'
+                }`}
+                title={isMyAttendance ? 'Seu atendimento' : `Atendido por ${timer.userName}`}
               >
-                👤 {timer.userName}
+                {isMyAttendance ? '🔵 Você' : `👤 ${timer.userName}`}
               </div>
             )}
           </div>
@@ -532,15 +405,20 @@ const handleFinalizarChamadoDireto = async (chamado: Chamado) => {
           <h1 className="text-2xl font-bold text-secondary-900">Suporte à Linha</h1>
           <div className="flex items-center space-x-4 mt-1">
             <p className="text-sm text-secondary-600">
-              {pagination.totalItems === 1 
-                ? '1 Chamado Aberto' 
-                : `${pagination.totalItems} Chamados Abertos`
-              }
+              {pagination.totalItems === 1 ? '1 Chamado' : `${pagination.totalItems} Chamados`}
             </p>
-            {isUserInAttendance && (
-              <div className="flex items-center space-x-2 bg-orange-100 text-orange-800 px-3 py-1 rounded-full text-sm">
-                <span className="w-2 h-2 bg-orange-500 rounded-full animate-pulse"></span>
-                <span>Atendendo chamado #{currentAttendance?.chamadoId}</span>
+            {isInAttendance && attendanceChamado && (
+              <div className="flex items-center space-x-2 bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm">
+                <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
+                <span>Atendendo chamado #{attendanceChamado.cha_id}</span>
+                {!atendimentoModalOpen && (
+                  <button 
+                    onClick={() => setAtendimentoModalOpen(true)}
+                    className="ml-2 text-blue-600 hover:text-blue-800 underline"
+                  >
+                    Abrir
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -549,8 +427,9 @@ const handleFinalizarChamadoDireto = async (chamado: Chamado) => {
           <Button 
             variant="secondary"
             onClick={() => loadChamados(pagination.currentPage)}
+            disabled={loading}
           >
-            🔄 Atualizar Tabela
+            🔄 Atualizar
           </Button>
           <Button 
             onClick={handleNewChamado}
@@ -655,17 +534,17 @@ const handleFinalizarChamadoDireto = async (chamado: Chamado) => {
         {selectedChamado && (
           <div className="space-y-4">
             {getTimer(selectedChamado.cha_id) && (
-              <div className="bg-orange-50 border border-orange-200 p-4 rounded-lg">
+              <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
-                    <span className="w-3 h-3 bg-orange-500 rounded-full animate-pulse"></span>
-                    <span className="font-medium text-orange-800">Atendimento em andamento</span>
+                    <span className="w-3 h-3 bg-blue-500 rounded-full animate-pulse"></span>
+                    <span className="font-medium text-blue-800">Atendimento em andamento</span>
                   </div>
-                  <div className="text-2xl font-mono font-bold text-orange-900">
+                  <div className="text-2xl font-mono font-bold text-blue-900">
                     {formatTimer(getTimer(selectedChamado.cha_id)!.seconds)}
                   </div>
                 </div>
-                <p className="text-sm text-orange-700 mt-2">
+                <p className="text-sm text-blue-700 mt-2">
                   Por: {getTimer(selectedChamado.cha_id)!.startedBy}
                 </p>
               </div>
@@ -688,11 +567,15 @@ const handleFinalizarChamadoDireto = async (chamado: Chamado) => {
               </div>
               <div>
                 <label className="form-label">Cliente:</label>
-                <p className="text-secondary-900">{selectedChamado.cliente_nome}</p>
+                <p className="text-secondary-900">{selectedChamado.cliente_nome || 'Não informado'}</p>
               </div>
               <div>
                 <label className="form-label">Tipo:</label>
-                <p className="text-secondary-900">{selectedChamado.tipo_chamado}</p>
+                <p className="text-secondary-900">{selectedChamado.tipo_chamado || 'Não informado'}</p>
+              </div>
+              <div>
+                <label className="form-label">Produto:</label>
+                <p className="text-secondary-900">{selectedChamado.produto_nome || 'N/A'}</p>
               </div>
               <div>
                 <label className="form-label">Operador:</label>
@@ -715,13 +598,13 @@ const handleFinalizarChamadoDireto = async (chamado: Chamado) => {
       <Modal
         isOpen={atendimentoModalOpen}
         onClose={handleCloseModal}
-        title={`Atendimento - Chamado #${chamadoAtendimento?.cha_id}`}
+        title={`Atendimento - Chamado #${attendanceChamado?.cha_id}`}
         size="xl"
         preventClose={true}
       >
-        {chamadoAtendimento && (
+        {attendanceChamado && (
           <ChamadoAtendimento
-            chamado={chamadoAtendimento}
+            chamado={attendanceChamado}
             onFinish={(updatedChamado) => {
               handleChamadoUpdated(updatedChamado);
               handleCloseModal();
@@ -730,65 +613,6 @@ const handleFinalizarChamadoDireto = async (chamado: Chamado) => {
           />
         )}
       </Modal>
-      <Modal
-  isOpen={finalizarModalOpen}
-  onClose={handleCancelarFinalizacao}
-  title={`Finalizar Chamado #${chamadoParaFinalizar?.cha_id}`}
-  size="md"
->
-  {chamadoParaFinalizar && (
-    <div className="space-y-4">
-      <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg">
-        <div className="flex items-center justify-between mb-2">
-          <span className="font-medium text-blue-800">Atendimento em andamento</span>
-          <div className="text-lg font-mono font-bold text-blue-900">
-            {(() => {
-              const timer = getTimer(chamadoParaFinalizar.cha_id);
-              return timer ? formatTimer(timer.seconds) : '00:00';
-            })()}
-          </div>
-        </div>
-        <div className="text-sm text-blue-700">
-          <p><strong>DT:</strong> {chamadoParaFinalizar.cha_DT}</p>
-          <p><strong>Cliente:</strong> {chamadoParaFinalizar.cliente_nome}</p>
-          <p><strong>Descrição:</strong> {chamadoParaFinalizar.cha_descricao}</p>
-        </div>
-      </div>
-
-      <div>
-        <label className="form-label">Ação Realizada *</label>
-        <Select
-          placeholder="Selecione a ação realizada..."
-          value={selectedAcaoFinalizar || ''}
-          onChange={(value) => setSelectedAcaoFinalizar(Number(value))}
-          options={acoesFinalizar.map(acao => ({
-            value: acao.ach_id,
-            label: acao.ach_descricao
-          }))}
-          // disabled={loadingFinalizar}
-        />
-      </div>
-
-      <div className="flex justify-end space-x-3 pt-4">
-        <Button
-          variant="secondary"
-          onClick={handleCancelarFinalizacao}
-          // disabled={loadingFinalizar}
-        >
-          Cancelar
-        </Button>
-        {/* <Button
-          variant="success"
-          onClick={handleConfirmarFinalizacao}
-          loading={loadingFinalizar}
-          disabled={loadingFinalizar || !selectedAcaoFinalizar}
-        >
-          ✅ Finalizar Chamado
-        </Button> */}
-      </div>
-    </div>
-  )}
-</Modal>
     </div>
   );
 };

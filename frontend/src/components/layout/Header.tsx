@@ -1,5 +1,7 @@
 import React from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useGlobalAttendance } from '../../hooks/useGlobalAttendance'; // NOVO
+import { useNavigate } from 'react-router-dom'; // NOVO
 import Button from '../ui/Button';
 
 interface HeaderProps {
@@ -8,6 +10,8 @@ interface HeaderProps {
 
 const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
   const { logout, state } = useAuth();
+  const { isInAttendance, attendanceChamado } = useGlobalAttendance(); // NOVO
+  const navigate = useNavigate(); // NOVO
 
   const handleLogout = async () => {
     if (window.confirm('Tem certeza que deseja sair?')) {
@@ -39,6 +43,23 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
 
         {/* Actions */}
         <div className="flex items-center space-x-4">
+          {/* NOVO: Indicador Global de Atendimento */}
+          {isInAttendance && attendanceChamado && (
+            <div 
+              onClick={() => navigate('/chamados')}
+              className="flex items-center space-x-2 bg-orange-100 text-orange-800 px-3 py-2 rounded-lg text-sm cursor-pointer hover:bg-orange-200 transition-colors"
+              title="Clique para voltar ao atendimento"
+            >
+              <span className="w-2 h-2 bg-orange-500 rounded-full animate-pulse"></span>
+              <span className="font-medium">
+                🔥 Atendendo #{attendanceChamado.cha_id}
+              </span>
+              <span className="text-xs">
+                Clique aqui
+              </span>
+            </div>
+          )}
+
           {/* Notificações */}
           <button className="p-2 rounded-md hover:bg-secondary-100 relative">
             <svg className="w-5 h-5 text-secondary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">

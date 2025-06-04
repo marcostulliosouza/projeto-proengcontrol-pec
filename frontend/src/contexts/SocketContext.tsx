@@ -1,9 +1,8 @@
-import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useAuth } from './AuthContext';
-import type { Chamado } from '../types'; 
 
-interface AttendanceData {
+interface AttendanceInfo {
   chamadoId: number;
   userId: number;
   userName: string;
@@ -12,295 +11,260 @@ interface AttendanceData {
 
 interface SocketContextType {
   socket: Socket | null;
-  lockChamado: (chamadoId: number) => Promise<boolean>;
-  unlockChamado: (chamadoId: number) => void;
-  emitChamadoUpdate: (chamado: Chamado) => void;
-  startTimer: (chamadoId: number) => void;
-  updateTimer: (chamadoId: number, seconds: number) => void;
-  startAttendance: (chamadoId: number) => Promise<AttendanceData | null>;
-  finishAttendance: () => void;
-  cancelAttendance: (chamadoId: number) => void;
+  connected: boolean;
   isUserInAttendance: boolean;
-  currentAttendance: AttendanceData | null;
+  currentAttendance: AttendanceInfo | null;
+  startAttendance: (chamadoId: number) => Promise<AttendanceInfo | null>;
+  cancelAttendance: (chamadoId: number) => void;
+  finishAttendance: () => void;
 }
 
-const SocketContext = createContext<SocketContextType | null>(null);
+interface AtendimentoAtivoAPI {
+  atc_chamado: number;
+  atc_colaborador: number;
+  colaborador_nome: string;
+  atc_data_hora_inicio: string;
+}
+
+const SocketContext = createContext<SocketContextType | undefined>(undefined);
 
 interface SocketProviderProps {
   children: React.ReactNode;
 }
 
 export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
-  const { state } = useAuth();
-  const socketRef = useRef<Socket | null>(null);
-  
-  // Estados para atendimento
+  const [socket, setSocket] = useState<Socket | null>(null);
+  const [connected, setConnected] = useState(false);
   const [isUserInAttendance, setIsUserInAttendance] = useState(false);
-  const [currentAttendance, setCurrentAttendance] = useState<AttendanceData | null>(null);
+  const [currentAttendance, setCurrentAttendance] = useState<AttendanceInfo | null>(null);
+  const { state: authState } = useAuth();
+  
+  // Refs para evitar loops infinitos
+  const socketRef = useRef<Socket | null>(null);
+  const isInitializing = useRef(false);
+  const lastUserId = useRef<number | null>(null);
 
-  // Conectar ao WebSocket
-  useEffect(() => {
-    if (state.isAuthenticated && state.user) {
-      console.log('=== CONECTANDO WEBSOCKET ===');
-      console.log('User:', state.user);
-      
-      // Conectar ao WebSocket
-      const socketUrl = import.meta.env.VITE_API_URL?.replace('/api/v1', '') || 'http://localhost:3001';
-      console.log('Socket URL:', socketUrl);
-      
-      socketRef.current = io(socketUrl);
-      const socket = socketRef.current;
+  // Verificar atendimento ativo via API - MEMOIZED
+  const checkForActiveAttendance = useCallback(async () => {
+    if (!authState.user || isInitializing.current) return;
 
-      socket.on('connect', () => {
-        console.log('✅ WebSocket conectado! Socket ID:', socket.id);
+    try {
+      console.log('🔍 Verificando atendimento ativo...');
+      
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/v1';
+      const response = await fetch(`${apiUrl}/chamados/atendimentos-ativos`);
+      const data = await response.json();
+      
+      if (data.success && data.data) {
+        const myAttendance = data.data.find((att: AtendimentoAtivoAPI) => att.atc_colaborador === authState.user?.id);
         
-        // Autenticar usuário
-        if (state.user) {
-          socket.emit('authenticate', {
-            id: state.user.id,
-            nome: state.user.nome,
-            categoria: state.user.categoria
-          });
-          console.log('📡 Dados de autenticação enviados');
+        if (myAttendance) {
+          const attendanceInfo: AttendanceInfo = {
+            chamadoId: myAttendance.atc_chamado,
+            userId: myAttendance.atc_colaborador,
+            userName: myAttendance.colaborador_nome || authState.user.nome,
+            startTime: myAttendance.atc_data_hora_inicio
+          };
+          
+          setCurrentAttendance(attendanceInfo);
+          setIsUserInAttendance(true);
+          console.log('✅ Atendimento ativo encontrado:', attendanceInfo.chamadoId);
         } else {
-          console.error('Usuário não autenticado');
+          setCurrentAttendance(null);
+          setIsUserInAttendance(false);
         }
-      });
+      }
+    } catch (error) {
+      console.error('Erro ao verificar atendimento ativo:', error);
+    }
+  }, [authState.user]);
 
-      socket.on('disconnect', () => {
-        console.log('❌ WebSocket desconectado');
-      });
-
-      socket.on('connect_error', (error) => {
-        console.error('🔥 Erro de conexão WebSocket:', error);
-      });
-
-      // Escutar eventos de atendimento
-      socket.on('user_in_attendance', (data) => {
-        console.log('📥 Recebido user_in_attendance:', data);
-        setIsUserInAttendance(true);
-        setCurrentAttendance(data);
-      });
-
-      socket.on('attendance_started', (data: AttendanceData) => {
-        console.log('📥 Recebido attendance_started:', data);
-        setIsUserInAttendance(true);
-        setCurrentAttendance(data);
-      });
-
-      socket.on('attendance_finished', () => {
-        console.log('📥 Recebido attendance_finished');
+  // Inicializar socket APENAS uma vez por usuário
+  useEffect(() => {
+    // Evitar re-inicialização desnecessária
+    if (!authState.isAuthenticated || !authState.user) {
+      if (socketRef.current) {
+        console.log('🔌 Limpando socket - usuário não autenticado');
+        socketRef.current.disconnect();
+        socketRef.current = null;
+        setSocket(null);
+        setConnected(false);
         setIsUserInAttendance(false);
         setCurrentAttendance(null);
-      });
-
-      socket.on('attendance_blocked', (data) => {
-        console.log('📥 Recebido attendance_blocked:', data);
-        alert(data.reason);
-      });
-
-      socket.on('timers_sync', (timersData: { chamadoId: number; seconds: number; userId?: number }[]) => {
-        // Se eu estava em atendimento mas meu timer sumiu
-        if (currentAttendance) {
-          const meuTimer = timersData.find(timer => timer.chamadoId === currentAttendance.chamadoId);
-          if (!meuTimer) {
-            console.log('⏰ Meu timer sumiu - atendimento finalizado');
-            setIsUserInAttendance(false);
-            setCurrentAttendance(null);
-          }
-        }
-      });
-
-      socket.on('active_attendances_updated', (atendimentos: AttendanceData[]) => {
-        // Atualizar lista de atendimentos ativos
-        console.log('📥 Atendimentos atualizados:', atendimentos);
-      });
-
-      socket.on('user_cancelled_attendance', (data) => {
-        // Alguém cancelou atendimento
-        console.log('📥 Atendimento cancelado:', data);
-      });
-
-      socket.on('user_finished_attendance', (data) => {
-        // Se é meu atendimento que foi finalizado
-        if (currentAttendance && data.chamadoId === currentAttendance.chamadoId) {
-          console.log('🏁 Meu atendimento foi finalizado via API');
-          setIsUserInAttendance(false);
-          setCurrentAttendance(null);
-        }
-      });
-
-      // Cleanup na desconexão
-      return () => {
-        socket.off('user_in_attendance');
-        socket.off('attendance_started');
-        socket.off('attendance_finished');
-        socket.off('attendance_blocked');
-        socket.off('timers_sync');
-        socket.off('active_attendances_updated');
-        socket.off('user_cancelled_attendance');
-        socket.off('user_finished_attendance');
-        console.log('🧹 Limpando conexão WebSocket');
-        socket.disconnect();
-        socketRef.current = null;
-      };
-    }
-  }, [state.isAuthenticated, state.user, currentAttendance]); // Adicionar currentAttendance nas dependências
-
-  // Implementar todas as funções necessárias
-  const lockChamado = (chamadoId: number): Promise<boolean> => {
-    return new Promise((resolve) => {
-      if (!socketRef.current || !state.user) {
-        resolve(false);
-        return;
       }
+      return;
+    }
 
-      const socket = socketRef.current;
-      
-      const timeout = setTimeout(() => {
-        resolve(false);
-      }, 5000);
+    // Evitar reconexão se for o mesmo usuário
+    if (lastUserId.current === authState.user.id && socketRef.current?.connected) {
+      console.log('🔌 Socket já conectado para este usuário');
+      return;
+    }
 
-      socket.once('lock_success', () => {
-        clearTimeout(timeout);
-        resolve(true);
-      });
+    // Limpar socket anterior
+    if (socketRef.current) {
+      socketRef.current.disconnect();
+    }
 
-      socket.once('lock_failed', () => {
-        clearTimeout(timeout);
-        resolve(false);
-      });
+    console.log('🔌 Inicializando socket para:', authState.user.nome);
+    isInitializing.current = true;
+    lastUserId.current = authState.user.id;
 
-      socket.emit('lock_chamado', {
-        chamadoId,
-        userId: state.user.id,
-        userName: state.user.nome
-      });
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+    const socketUrl = apiUrl.replace('/api/v1', '');
+
+    const newSocket = io(socketUrl, {
+      transports: ['websocket', 'polling'],
+      timeout: 20000,
+      autoConnect: true,
+      forceNew: true, // Força nova conexão
     });
-  };
 
-  const unlockChamado = (chamadoId: number) => {
-    if (socketRef.current) {
-      socketRef.current.emit('unlock_chamado', { chamadoId });
-    }
-  };
-
-  const emitChamadoUpdate = (chamado: Chamado) => {
-    if (socketRef.current) {
-      socketRef.current.emit('chamado_updated', chamado);
-    }
-  };
-
-  const startTimer = (chamadoId: number) => {
-    if (socketRef.current) {
-      socketRef.current.emit('start_timer', { 
-        chamadoId, 
-        startedBy: state.user?.nome,
-        startedAt: new Date().toISOString()
+    // Eventos de conexão
+    newSocket.on('connect', () => {
+      console.log('🔌 Conectado ao servidor');
+      setConnected(true);
+      isInitializing.current = false;
+      
+      // Autenticar
+      newSocket.emit('authenticate', {
+        id: authState.user?.id,
+        nome: authState.user?.nome,
+        login: authState.user?.login,
+        categoria: authState.user?.categoria
       });
-    }
-  };
+      
+      // Verificar atendimento após conectar
+      setTimeout(checkForActiveAttendance, 1000);
+    });
 
-  const updateTimer = (chamadoId: number, seconds: number) => {
-    if (socketRef.current && state.user) {
-      socketRef.current.emit('timer_update', { 
-        chamadoId, 
-        seconds,
-        userId: state.user.id
-      });
-    }
-  };
+    newSocket.on('disconnect', () => {
+      console.log('🔌 Desconectado do servidor');
+      setConnected(false);
+    });
 
-  const startAttendance = (chamadoId: number): Promise<AttendanceData | null> => {
+    newSocket.on('connect_error', (error) => {
+      console.error('❌ Erro de conexão:', error);
+      setConnected(false);
+      isInitializing.current = false;
+    });
+
+    // Eventos de atendimento - SIMPLIFICADOS
+    newSocket.on('user_in_attendance', (data: AttendanceInfo) => {
+      console.log('✅ Em atendimento:', data);
+      setCurrentAttendance(data);
+      setIsUserInAttendance(true);
+    });
+
+    newSocket.on('attendance_started', (data: AttendanceInfo) => {
+      console.log('🚀 Atendimento iniciado:', data);
+      setCurrentAttendance(data);
+      setIsUserInAttendance(true);
+    });
+
+    newSocket.on('attendance_finished', () => {
+      console.log('🏁 Atendimento finalizado');
+      setCurrentAttendance(null);
+      setIsUserInAttendance(false);
+    });
+
+    newSocket.on('attendance_cancelled', () => {
+      console.log('🚫 Atendimento cancelado');
+      setCurrentAttendance(null);
+      setIsUserInAttendance(false);
+    });
+
+    newSocket.on('attendance_blocked', (data: { reason: string }) => {
+      console.log('🚫 Atendimento bloqueado:', data.reason);
+      alert(`Erro: ${data.reason}`);
+    });
+
+    socketRef.current = newSocket;
+    setSocket(newSocket);
+
+    return () => {
+      console.log('🧹 Limpando socket...');
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
+      isInitializing.current = false;
+    };
+  }, [authState.isAuthenticated, authState.user, checkForActiveAttendance]);
+
+  // Funções memoized
+  const startAttendance = useCallback(async (chamadoId: number): Promise<AttendanceInfo | null> => {
+    if (!socketRef.current || !authState.user) {
+      console.error('❌ Socket não conectado');
+      return null;
+    }
+
+    if (isUserInAttendance) {
+      alert(`Você já está atendendo o chamado #${currentAttendance?.chamadoId}`);
+      return null;
+    }
+
     return new Promise((resolve) => {
-      console.log('=== INICIANDO START_ATTENDANCE ===');
-      console.log('Socket atual:', socketRef.current);
-      console.log('Socket conectado:', socketRef.current?.connected);
-      console.log('User:', state.user);
+      const socket = socketRef.current!;
       
-      if (!socketRef.current || !state.user) {
-        console.error('❌ Socket ou usuário não disponível');
-        console.error('Socket:', !!socketRef.current);
-        console.error('User:', !!state.user);
-        resolve(null);
-        return;
-      }
+      const onSuccess = (data: AttendanceInfo) => {
+        socket.off('attendance_started', onSuccess);
+        socket.off('attendance_blocked', onError);
+        resolve(data);
+      };
 
-      if (!socketRef.current.connected) {
-        console.error('❌ Socket não está conectado');
+      const onError = (data: { reason: string }) => {
+        socket.off('attendance_started', onSuccess);
+        socket.off('attendance_blocked', onError);
+        alert(`Erro: ${data.reason}`);
         resolve(null);
-        return;
-      }
+      };
 
-      const socket = socketRef.current;
-      
-      const timeout = setTimeout(() => {
-        console.error('⏰ Timeout ao iniciar atendimento');
+      socket.once('attendance_started', onSuccess);
+      socket.once('attendance_blocked', onError);
+
+      socket.emit('start_attendance', {
+        chamadoId,
+        userId: authState.user!.id,
+        userName: authState.user!.nome
+      });
+
+      // Timeout
+      setTimeout(() => {
+        socket.off('attendance_started', onSuccess);
+        socket.off('attendance_blocked', onError);
         resolve(null);
       }, 10000);
-
-      // Limpar listeners anteriores
-      socket.off('attendance_started');
-      socket.off('attendance_blocked');
-
-      socket.once('attendance_started', (data: AttendanceData) => {
-        console.log('✅ Atendimento iniciado com sucesso:', data);
-        clearTimeout(timeout);
-        resolve(data);
-      });
-
-      socket.once('attendance_blocked', (error: { message?: string; reason?: string }) => {
-        console.error('🚫 Atendimento bloqueado:', error);
-        clearTimeout(timeout);
-        resolve(null);
-      });
-
-      const emitData = {
-        chamadoId,
-        userId: state.user.id,
-        userName: state.user.nome
-      };
-      
-      console.log('📤 Emitindo start_attendance:', emitData);
-      socket.emit('start_attendance', emitData);
     });
-  };
+  }, [authState.user, isUserInAttendance, currentAttendance?.chamadoId]);
 
-  const cancelAttendance = (chamadoId: number) => {
-    if (socketRef.current && state.user) {
-      console.log(`🚫 Emitindo cancelamento via socket: chamado ${chamadoId}`);
-      
-      socketRef.current.emit('cancel_attendance', {
-        chamadoId,
-        userId: state.user.id
-      });
-      
-      // Atualizar estado local imediatamente
-      setIsUserInAttendance(false);
-      setCurrentAttendance(null);
-    }
-  };
+  const cancelAttendance = useCallback((chamadoId: number) => {
+    if (!socketRef.current || !authState.user || !isUserInAttendance) return;
 
-  const finishAttendance = () => {
-    if (socketRef.current && state.user) {
-      socketRef.current.emit('finish_attendance', {
-        userId: state.user.id
-      });
-    }
-  };
+    console.log(`🚫 Cancelando atendimento ${chamadoId}...`);
+    socketRef.current.emit('cancel_attendance', {
+      chamadoId,
+      userId: authState.user.id
+    });
+  }, [authState.user, isUserInAttendance]);
+
+  const finishAttendance = useCallback(() => {
+    if (!socketRef.current || !authState.user || !isUserInAttendance) return;
+
+    console.log('🏁 Finalizando atendimento...');
+    socketRef.current.emit('finish_attendance', {
+      userId: authState.user.id
+    });
+  }, [authState.user, isUserInAttendance]);
 
   const value: SocketContextType = {
-    socket: socketRef.current,
-    lockChamado,
-    unlockChamado,
-    emitChamadoUpdate,
-    startTimer,
-    updateTimer,
-    startAttendance,
-    finishAttendance,
+    socket,
+    connected,
     isUserInAttendance,
     currentAttendance,
-    cancelAttendance
+    startAttendance,
+    cancelAttendance,
+    finishAttendance,
   };
 
   return (
@@ -313,7 +277,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
 export const useSocket = () => {
   const context = useContext(SocketContext);
   if (!context) {
-    throw new Error('useSocket deve ser usado dentro de SocketProvider');
+    throw new Error('useSocket deve ser usado dentro de um SocketProvider');
   }
   return context;
 };

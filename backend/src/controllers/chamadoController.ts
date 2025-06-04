@@ -416,43 +416,11 @@ export const finalizarChamado = asyncHandler(async (req: AuthRequest, res: Respo
     return;
   }
 
- try {
+  try {
     console.log('✅ Validações passaram, finalizando chamado...');
     
-    // 1. Buscar dados do atendimento ANTES de finalizar
-    const atendimentoAtivo = await AtendimentoAtivoModel.buscarPorChamado(id);
-    
-    // 2. Finalizar o chamado
+    // Usar a nova função que segue a lógica exata do Python
     await AtendimentoAtivoModel.finalizarComDetrator(id, detrator_id, descricao);
-
-    // 3. EMITIR EVENTOS WEBSOCKET (pegar io do servidor)
-    const io = (req as any).app.get('io'); // Vamos configurar isso no server.ts
-    
-    if (io && atendimentoAtivo) {
-      console.log('📡 Emitindo eventos WebSocket para finalização');
-      
-      // Emitir para todos que o atendimento foi finalizado
-      io.emit('user_finished_attendance', {
-        userId: atendimentoAtivo.atc_colaborador,
-        chamadoId: id
-      });
-      
-      // Atualizar lista de atendimentos ativos
-      const atendimentosAtivos = await AtendimentoAtivoModel.listarAtivos();
-      io.emit('active_attendances_updated', atendimentosAtivos);
-      
-      // Atualizar timers
-      const timersData = atendimentosAtivos.map(atendimento => ({
-        chamadoId: atendimento.atc_chamado,
-        seconds: atendimento.tempo_decorrido || 0,
-        userId: atendimento.atc_colaborador,
-        userName: atendimento.colaborador_nome,
-        startedBy: atendimento.colaborador_nome,
-        startTime: atendimento.atc_data_hora_inicio
-      }));
-      
-      io.emit('timers_sync', timersData);
-    }
 
     console.log('✅ Chamado finalizado com sucesso');
     res.json({

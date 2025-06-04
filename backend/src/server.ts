@@ -1,5 +1,3 @@
-// Em backend/src/server.ts - VERSÃO COMPLETA ATUALIZADA:
-
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -69,6 +67,7 @@ const broadcastActiveAttendances = async () => {
   try {
     const atendimentos = await AtendimentoAtivoModel.listarAtivos();
     io.emit('active_attendances_updated', atendimentos);
+    console.log(`📡 Broadcast: ${atendimentos.length} atendimentos ativos`);
   } catch (error) {
     console.error('Erro ao fazer broadcast dos atendimentos:', error);
   }
@@ -95,10 +94,10 @@ setInterval(async () => {
   }
 }, 5000); // A cada 5 segundos
 
-// Limpeza automática a cada 2 minutos (pode manter se necessário)
+// Limpeza automática a cada 2 minutos
 setInterval(async () => {
   try {
-    // Limpar conexões órfãs se necessário
+    await AtendimentoAtivoModel.limparRegistrosOrfaos();
     await broadcastActiveAttendances();
   } catch (error) {
     console.error('Erro na limpeza automática:', error);
@@ -123,6 +122,7 @@ io.on('connection', (socket) => {
       const atendimentoAtivo = await AtendimentoAtivoModel.buscarPorColaborador(userData.id);
       
       if (atendimentoAtivo) {
+        console.log(`✅ Usuário ${userData.nome} tem atendimento ativo:`, atendimentoAtivo.atc_chamado);
         socket.emit('user_in_attendance', {
           chamadoId: atendimentoAtivo.atc_chamado,
           userId: atendimentoAtivo.atc_colaborador,
@@ -130,6 +130,8 @@ io.on('connection', (socket) => {
           startTime: atendimentoAtivo.atc_data_hora_inicio,
           elapsedSeconds: atendimentoAtivo.tempo_decorrido || 0
         });
+      } else {
+        console.log(`ℹ️ Usuário ${userData.nome} não tem atendimento ativo`);
       }
 
       // Enviar todos os atendimentos ativos para sincronizar
@@ -154,11 +156,14 @@ io.on('connection', (socket) => {
     socket.broadcast.emit('user_connected', userData);
   });
 
-  // Iniciar atendimento
+  // Iniciar atendimento COM VERIFICAÇÃO RIGOROSA
   socket.on('start_attendance', async (data) => {
     const { chamadoId, userId, userName } = data;
     
     try {
+      console.log(`🚀 Socket: Tentativa de iniciar atendimento - Chamado ${chamadoId}, Usuário ${userId} (${userName})`);
+      
+      // Usar a nova função que faz verificação rigorosa
       await AtendimentoAtivoModel.iniciar(chamadoId, userId);
       
       const attendanceData = {
@@ -169,14 +174,21 @@ io.on('connection', (socket) => {
         startTime: new Date().toISOString()
       };
       
+      // Emitir para o usuário que iniciou
       socket.emit('attendance_started', attendanceData);
+      
+      // Emitir para TODOS os outros usuários
       socket.broadcast.emit('user_started_attendance', attendanceData);
+      
+      console.log(`✅ Socket: Atendimento iniciado com sucesso - Chamado ${chamadoId} por ${userName}`);
       
       // Broadcast atualização geral
       await broadcastActiveAttendances();
+      
     } catch (error) {
+      console.error(`❌ Socket: Erro ao iniciar atendimento - ${error}`);
       socket.emit('attendance_blocked', { 
-        reason: (error as any)?.message || 'Não foi possível iniciar atendimento' 
+        reason: (error as Error)?.message || 'Não foi possível iniciar atendimento' 
       });
     }
   });
@@ -189,6 +201,8 @@ io.on('connection', (socket) => {
       const atendimentoAtivo = await AtendimentoAtivoModel.buscarPorColaborador(userId);
       
       if (atendimentoAtivo) {
+        console.log(`🏁 Socket: Finalizando atendimento do chamado ${atendimentoAtivo.atc_chamado}`);
+        
         // Emitir ANTES de finalizar
         socket.emit('attendance_finished');
         socket.broadcast.emit('user_finished_attendance', {
@@ -244,31 +258,13 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Sincronizar timers (não usado mais - agora é automático)
-  socket.on('sync_timers', async () => {
-    try {
-      const atendimentos = await AtendimentoAtivoModel.listarAtivos();
-      const timersData = atendimentos.map(atendimento => ({
-        chamadoId: atendimento.atc_chamado,
-        seconds: atendimento.tempo_decorrido || 0,
-        userId: atendimento.atc_colaborador,
-        userName: atendimento.colaborador_nome,
-        startedBy: atendimento.colaborador_nome,
-        startTime: atendimento.atc_data_hora_inicio
-      }));
-      
-      socket.emit('timers_sync', timersData);
-    } catch (error) {
-      console.error('Erro ao sincronizar timers:', error);
-    }
-  });
-
   // Desconexão
   socket.on('disconnect', () => {
-    console.log('Cliente desconectado:', socket.id);
+    console.log('🔌 Cliente desconectado:', socket.id);
     
     const user = activeUsers.get(socket.id);
     if (user) {
+      console.log(`👤 Usuário ${user.nome} desconectou`);
       activeUsers.delete(socket.id);
       socket.broadcast.emit('user_disconnected', user);
     }
@@ -284,7 +280,8 @@ app.get('/health', (req, res) => {
     message: 'ProEngControl API está funcionando!',
     timestamp: new Date().toISOString(),
     version: '1.0.0',
-    environment: process.env.NODE_ENV
+    environment: process.env.NODE_ENV,
+    activeConnections: activeUsers.size
   });
 });
 
@@ -332,6 +329,10 @@ const startServer = async () => {
       console.error('❌ Falha na conexão com o banco de dados');
       process.exit(1);
     }
+
+    // Limpeza inicial de registros órfãos
+    await AtendimentoAtivoModel.limparRegistrosOrfaos();
+    console.log('🧹 Limpeza inicial de registros órfãos concluída');
 
     // Iniciar servidor
     server.listen(PORT, () => {

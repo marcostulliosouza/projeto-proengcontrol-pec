@@ -198,6 +198,6 @@ router.post('/', createChamado);
 router.put('/:id', updateChamado);
 router.put('/:id/iniciar', iniciarAtendimento);
 router.put('/:id/cancelar', cancelarAtendimento);
-router.put('/:id/finalizar', requireRole([2, 3, 4, 5]), finalizarChamado);
+router.put('/:id/finalizar', finalizarChamado);
 
 export default router;
