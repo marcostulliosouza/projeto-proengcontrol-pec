@@ -21,7 +21,13 @@ export class ChamadoModel {
       if (filters.status) {
         whereClause += ` AND c.cha_status = ?`;
         params.push(filters.status);
+      } else {
+        // Filtro padrão como no sistema antigo
+        whereClause += ` AND (c.cha_status = 1 OR c.cha_status = 2)`;
       }
+
+       whereClause += ` AND (atc.atc_data_hora_termino IS NULL OR atc.atc_data_hora_termino IS NULL)`;
+
 
       if (filters.cliente) {
         whereClause += ` AND c.cha_cliente = ?`;
@@ -47,41 +53,49 @@ export class ChamadoModel {
       const countQuery = `
         SELECT COUNT(*) as total
         FROM chamados c
+        LEFT JOIN atendimentos_chamados atc ON c.cha_id = atc.atc_chamado AND atc.atc_data_hora_termino IS NULL
         ${whereClause}
       `;
 
       // Query para buscar dados
       const dataQuery = `
-        SELECT 
-          c.cha_id,
-          c.cha_tipo,
-          c.cha_cliente,
-          c.cha_produto,
-          c.cha_DT,
-          c.cha_descricao,
-          c.cha_status,
-          c.cha_data_hora_abertura,
-          c.cha_data_hora_termino,
-          c.cha_data_hora_atendimento,
-          c.cha_acao,
-          c.cha_operador,
-          c.cha_visualizado,
-          c.cha_plano,
-          tc.tch_descricao as tipo_chamado,
-          sc.stc_descricao as status_chamado,
-          cl.cli_nome as cliente_nome,
-          p.pro_nome as produto_nome,
-          ac.ach_descricao as acao_descricao
-        FROM chamados c
-        LEFT JOIN tipos_chamado tc ON c.cha_tipo = tc.tch_id
-        LEFT JOIN status_chamado sc ON c.cha_status = sc.stc_id
-        LEFT JOIN clientes cl ON c.cha_cliente = cl.cli_id
-        LEFT JOIN produtos p ON c.cha_produto = p.pro_id
-        LEFT JOIN acoes_chamados ac ON c.cha_acao = ac.ach_id
-        ${whereClause}
-        ORDER BY c.cha_data_hora_abertura DESC
-        LIMIT ${pagination.limit} OFFSET ${pagination.offset}
-      `;
+      SELECT 
+        c.cha_id,
+        c.cha_operador,
+        TIMESTAMPDIFF(MINUTE, c.cha_data_hora_abertura, NOW()) AS duracao_total,
+        IF(c.cha_status > 1, TIMESTAMPDIFF(MINUTE, c.cha_data_hora_atendimento, NOW()), 0) AS duracao_atendimento,
+        c.cha_tipo,
+        MAX(tc.tch_descricao) AS tch_descricao,
+        MAX(cl.cli_nome) AS cli_nome,
+        MAX(p.pro_nome) AS pro_nome,
+        c.cha_DT,
+        c.cha_status,
+        MAX(sc.stc_descricao) AS stc_descricao,
+        MAX(atc.atc_colaborador) AS atc_colaborador,
+        MAX(col.col_nome) AS col_nome,
+        c.cha_descricao,
+        c.cha_plano,
+        c.cha_data_hora_abertura,
+        c.cha_data_hora_atendimento,
+        c.cha_data_hora_termino,
+        MAX(loc.loc_nome) AS local_chamado,
+        c.cha_cliente
+      FROM chamados c
+      LEFT JOIN atendimentos_chamados atc ON c.cha_id = atc.atc_chamado AND atc.atc_data_hora_termino IS NULL
+      LEFT JOIN tipos_chamado tc ON c.cha_tipo = tc.tch_id
+      LEFT JOIN status_chamado sc ON c.cha_status = sc.stc_id
+      LEFT JOIN clientes cl ON c.cha_cliente = cl.cli_id
+      LEFT JOIN produtos p ON c.cha_produto = p.pro_id
+      LEFT JOIN colaboradores col ON atc.atc_colaborador = col.col_id
+      LEFT JOIN local_chamado loc ON c.cha_local = loc.loc_id
+      ${whereClause}
+      GROUP BY c.cha_id
+      ORDER BY 
+        c.cha_status DESC,
+        duracao_total DESC,
+        duracao_atendimento DESC
+      LIMIT ${pagination.limit} OFFSET ${pagination.offset}
+    `;
 
       const [countResult, chamados] = await Promise.all([
         executeQuery(countQuery, params),
@@ -191,54 +205,6 @@ export class ChamadoModel {
       throw error;
     }
   }
-
-  // // Iniciar atendimento do chamado
-  // static async iniciarAtendimento(id: number, colaboradorId: number): Promise<boolean> {
-  //   try {
-  //     // Atualizar status e data de atendimento
-  //     const updateQuery = `
-  //       UPDATE chamados SET 
-  //         cha_status = 2,
-  //         cha_data_hora_atendimento = NOW()
-  //       WHERE cha_id = ?
-  //     `;
-
-  //     // Registrar atendimento
-  //     const atendimentoQuery = `
-  //       INSERT INTO atendimentos_chamados (atc_chamado, atc_colaborador, atc_data_hora_inicio)
-  //       VALUES (?, ?, NOW())
-  //     `;
-
-  //     await Promise.all([
-  //       executeQuery(updateQuery, [id]),
-  //       executeQuery(atendimentoQuery, [id, colaboradorId])
-  //     ]);
-
-  //     return true;
-  //   } catch (error) {
-  //     console.error('Erro ao iniciar atendimento:', error);
-  //     throw error;
-  //   }
-  // }
-
-  // Finalizar chamado
-  // static async finalizar(id: number, acaoId: number): Promise<boolean> {
-  //   try {
-  //     const query = `
-  //       UPDATE chamados SET
-  //         cha_status = 3,
-  //         cha_data_hora_termino = NOW(),
-  //         cha_acao = ?
-  //       WHERE cha_id = ?
-  //     `;
-
-  //     const result = await executeQuery(query, [acaoId, id]);
-  //     return result.affectedRows > 0;
-  //   } catch (error) {
-  //     console.error('Erro ao finalizar chamado:', error);
-  //     throw error;
-  //   }
-  // }
 
   // Buscar tipos de chamado
   static async getTipos() {

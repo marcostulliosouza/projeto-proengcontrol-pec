@@ -37,7 +37,7 @@ const Chamados: React.FC = () => {
   const [chamadoParaFinalizar, setChamadoParaFinalizar] = useState<Chamado | null>(null);
   const [acoesFinalizar, setAcoesFinalizar] = useState<Acao[]>([]);
   const [selectedAcaoFinalizar, setSelectedAcaoFinalizar] = useState<number | undefined>();
-  const [loadingFinalizar, setLoadingFinalizar] = useState(false);
+  // const [loadingFinalizar, setLoadingFinalizar] = useState(false);
 
   // Dados auxiliares
   const [tipos, setTipos] = useState<TipoChamado[]>([]);
@@ -82,37 +82,37 @@ const handleFinalizarChamadoDireto = async (chamado: Chamado) => {
   }
 };
 
-// Função para finalizar chamado direto
-const handleConfirmarFinalizacao = async () => {
-  if (!chamadoParaFinalizar || !selectedAcaoFinalizar) {
-    alert('Selecione uma ação para finalizar o chamado');
-    return;
-  }
+  // // Função para finalizar chamado direto
+  // const handleConfirmarFinalizacao = async () => {
+  //   if (!chamadoParaFinalizar || !selectedAcaoFinalizar) {
+  //     alert('Selecione uma ação para finalizar o chamado');
+  //     return;
+  //   }
 
-  try {
-    setLoadingFinalizar(true);
-    console.log(`🏁 Finalizando chamado ${chamadoParaFinalizar.cha_id} com ação ${selectedAcaoFinalizar}`);
-    
-    await ChamadoService.finalizarChamado(chamadoParaFinalizar.cha_id, selectedAcaoFinalizar);
-    
-    // Buscar chamado atualizado
-    const updatedChamado = await ChamadoService.getChamado(chamadoParaFinalizar.cha_id);
-    handleChamadoUpdated(updatedChamado);
-    
-    // Fechar modal
-    setFinalizarModalOpen(false);
-    setChamadoParaFinalizar(null);
-    setSelectedAcaoFinalizar(undefined);
-    
-    console.log('✅ Chamado finalizado com sucesso da tabela');
-    
-  } catch (error) {
-    console.error('Erro ao finalizar chamado:', error);
-    alert('Erro ao finalizar chamado');
-  } finally {
-    setLoadingFinalizar(false);
-  }
-};
+  //   try {
+  //     setLoadingFinalizar(true);
+  //     console.log(`🏁 Finalizando chamado ${chamadoParaFinalizar.cha_id} com ação ${selectedAcaoFinalizar}`);
+      
+  //     await ChamadoService.finalizarChamado(chamadoParaFinalizar.cha_id, selectedAcaoFinalizar);
+      
+  //     // Buscar chamado atualizado
+  //     const updatedChamado = await ChamadoService.getChamado(chamadoParaFinalizar.cha_id);
+  //     handleChamadoUpdated(updatedChamado);
+      
+  //     // Fechar modal
+  //     setFinalizarModalOpen(false);
+  //     setChamadoParaFinalizar(null);
+  //     setSelectedAcaoFinalizar(undefined);
+      
+  //     console.log('✅ Chamado finalizado com sucesso da tabela');
+      
+  //   } catch (error) {
+  //     console.error('Erro ao finalizar chamado:', error);
+  //     alert('Erro ao finalizar chamado');
+  //   } finally {
+  //     setLoadingFinalizar(false);
+  //   }
+  // };
 
   const handleCancelarFinalizacao = () => {
     setFinalizarModalOpen(false);
@@ -738,7 +738,7 @@ const handleConfirmarFinalizacao = async () => {
             value: acao.ach_id,
             label: acao.ach_descricao
           }))}
-          disabled={loadingFinalizar}
+          // disabled={loadingFinalizar}
         />
       </div>
 
@@ -746,18 +746,18 @@ const handleConfirmarFinalizacao = async () => {
         <Button
           variant="secondary"
           onClick={handleCancelarFinalizacao}
-          disabled={loadingFinalizar}
+          // disabled={loadingFinalizar}
         >
           Cancelar
         </Button>
-        <Button
+        {/* <Button
           variant="success"
           onClick={handleConfirmarFinalizacao}
           loading={loadingFinalizar}
           disabled={loadingFinalizar || !selectedAcaoFinalizar}
         >
           ✅ Finalizar Chamado
-        </Button>
+        </Button> */}
       </div>
     </div>
   )}
