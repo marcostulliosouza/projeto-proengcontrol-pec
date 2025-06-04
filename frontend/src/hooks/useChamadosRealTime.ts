@@ -69,7 +69,7 @@ export const useChamadosRealTime = (initialChamados: Chamado[]) => {
         return acc;
       }, []);
 
-      console.log(`🔄 Removidas duplicatas: ${atendimentos.length} -> ${uniqueAtendimentos.length}`);
+      console.log(`🔄 Processando ${uniqueAtendimentos.length} atendimentos únicos`);
       
       const newTimers = uniqueAtendimentos.map(atendimento => {
         const startTime = new Date(atendimento.atc_data_hora_inicio);
@@ -85,7 +85,8 @@ export const useChamadosRealTime = (initialChamados: Chamado[]) => {
           realStartTime: startTime // TEMPO REAL para cálculo contínuo
         };
       });
-      
+
+      console.log('⏰ Novos timers configurados:', newTimers);
       setTimers(newTimers);
     };
 
@@ -98,7 +99,7 @@ export const useChamadosRealTime = (initialChamados: Chamado[]) => {
       userName?: string; 
       userId: number; 
     }[]) => {
-      console.log('📊 TIMERS SYNC:', timersData.length);
+      console.log('📊 TIMERS SYNC recebido:', timersData.length);
       
       const syncedTimers = timersData.map(timerData => {
         const startTime = new Date(timerData.startedAt || timerData.startTime || 0);
@@ -125,7 +126,7 @@ export const useChamadosRealTime = (initialChamados: Chamado[]) => {
       userName: string; 
       userId: number 
     }) => {
-      console.log('🚀 Usuário iniciou atendimento:', data);
+      console.log('🚀 Usuário iniciou atendimento (evento recebido):', data);
       
       const startTime = new Date(data.startTime);
       const newTimer: Timer = {
@@ -140,24 +141,35 @@ export const useChamadosRealTime = (initialChamados: Chamado[]) => {
       
       setTimers(prev => {
         const filtered = prev.filter(timer => timer.chamadoId !== data.chamadoId);
-        return [...filtered, newTimer];
+        const updated = [...filtered, newTimer];
+        console.log('⏱️ Timers atualizados após início:', updated);
+        return updated;
       });
     };
 
     // Usuário finalizou/cancelou
-    const handleUserFinishedAttendance = (data: { chamadoId: number }) => {
-      console.log('✅ Usuário finalizou atendimento:', data);
-      setTimers(prev => prev.filter(timer => timer.chamadoId !== data.chamadoId));
+    const handleUserFinishedAttendance = (data: { chamadoId: number; userId?: number }) => {
+      console.log('✅ Usuário finalizou atendimento (evento recebido):', data);
+      setTimers(prev => {
+        const updated = prev.filter(timer => timer.chamadoId !== data.chamadoId);
+        console.log('⏰ Timers atualizados após finalização:', updated);
+        return updated;
+      });
     };
 
-    const handleUserCancelledAttendance = (data: { chamadoId: number }) => {
-      console.log('🚫 Usuário cancelou atendimento:', data);
-      setTimers(prev => prev.filter(timer => timer.chamadoId !== data.chamadoId));
+    const handleUserCancelledAttendance = (data: { chamadoId: number; userId?: number }) => {
+      console.log('🚫 Usuário cancelou atendimento (evento recebido):', data);
+      setTimers(prev => {
+        const updated = prev.filter(timer => timer.chamadoId !== data.chamadoId);
+        console.log('⏰ Timers atualizados após cancelamento:', updated);
+        return updated;
+      });
     };
 
     // Registrar listeners
     socket.on('timers_sync', handleTimersSync);
     socket.on('active_attendances_updated', handleActiveAttendances);
+    socket.on('active_attendances', handleActiveAttendances); // Também escutar este evento
     socket.on('user_started_attendance', handleUserStartedAttendance);
     socket.on('user_finished_attendance', handleUserFinishedAttendance);
     socket.on('user_cancelled_attendance', handleUserCancelledAttendance);
@@ -165,6 +177,7 @@ export const useChamadosRealTime = (initialChamados: Chamado[]) => {
     return () => {
       socket.off('timers_sync', handleTimersSync);
       socket.off('active_attendances_updated', handleActiveAttendances);
+      socket.off('active_attendances', handleActiveAttendances);
       socket.off('user_started_attendance', handleUserStartedAttendance);
       socket.off('user_finished_attendance', handleUserFinishedAttendance);
       socket.off('user_cancelled_attendance', handleUserCancelledAttendance);

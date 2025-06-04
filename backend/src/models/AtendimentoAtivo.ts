@@ -249,40 +249,51 @@ export class AtendimentoAtivoModel {
     }
   }
 
-  // Listar ativos SEM duplicatas
+  // Listar ativos SEM duplicatas e COM nomes
   static async listarAtivos(): Promise<AtendimentoAtivo[]> {
-  try {
-    const query = `
-      SELECT 
-        latest_atendimento.*,
-        c.col_nome as colaborador_nome,
-        ch.cha_descricao as chamado_descricao,
-        ch.cha_DT,
-        cl.cli_nome as cliente_nome,
-        tc.tch_descricao as tipo_chamado,
-        TIMESTAMPDIFF(SECOND, latest_atendimento.atc_data_hora_inicio, NOW()) as tempo_decorrido
-      FROM (
+    try {
+      const query = `
         SELECT 
-          atc_chamado,
-          MAX(atc_id) as latest_atc_id
-        FROM atendimentos_chamados
-        WHERE atc_data_hora_termino IS NULL
-        GROUP BY atc_chamado
-      ) latest
-      JOIN atendimentos_chamados latest_atendimento ON latest_atendimento.atc_id = latest.latest_atc_id
-      LEFT JOIN colaboradores c ON latest_atendimento.atc_colaborador = c.col_id
-      LEFT JOIN chamados ch ON latest_atendimento.atc_chamado = ch.cha_id
-      LEFT JOIN clientes cl ON ch.cha_cliente = cl.cli_id
-      LEFT JOIN tipos_chamado tc ON ch.cha_tipo = tc.tch_id
-      ORDER BY latest_atendimento.atc_data_hora_inicio ASC
-    `;
+          latest_atendimento.atc_id,
+          latest_atendimento.atc_chamado,
+          latest_atendimento.atc_colaborador,
+          latest_atendimento.atc_data_hora_inicio,
+          latest_atendimento.atc_data_hora_termino,
+          c.col_nome as colaborador_nome,
+          ch.cha_descricao as chamado_descricao,
+          ch.cha_DT,
+          cl.cli_nome as cliente_nome,
+          tc.tch_descricao as tipo_chamado,
+          TIMESTAMPDIFF(SECOND, latest_atendimento.atc_data_hora_inicio, NOW()) as tempo_decorrido
+        FROM (
+          SELECT 
+            atc_chamado,
+            MAX(atc_id) as latest_atc_id
+          FROM atendimentos_chamados
+          WHERE atc_data_hora_termino IS NULL
+          GROUP BY atc_chamado
+        ) latest
+        JOIN atendimentos_chamados latest_atendimento ON latest_atendimento.atc_id = latest.latest_atc_id
+        LEFT JOIN colaboradores c ON latest_atendimento.atc_colaborador = c.col_id
+        LEFT JOIN chamados ch ON latest_atendimento.atc_chamado = ch.cha_id
+        LEFT JOIN clientes cl ON ch.cha_cliente = cl.cli_id
+        LEFT JOIN tipos_chamado tc ON ch.cha_tipo = tc.tch_id
+        ORDER BY latest_atendimento.atc_data_hora_inicio ASC
+      `;
 
-    const results = await executeQuery(query);
-    return Array.isArray(results) ? results : [];
-  } catch (error) {
-    console.error('Erro ao listar atendimentos ativos:', error);
-    throw error;
-  }
+      const results = await executeQuery(query);
+      const atendimentos = Array.isArray(results) ? results : [];
+      
+      console.log('📋 Atendimentos ativos encontrados:', atendimentos.length);
+      atendimentos.forEach(atendimento => {
+        console.log(`- Chamado ${atendimento.atc_chamado} por ${atendimento.colaborador_nome} (ID: ${atendimento.atc_colaborador})`);
+      });
+      
+      return atendimentos;
+    } catch (error) {
+      console.error('Erro ao listar atendimentos ativos:', error);
+      throw error;
+    }
   }
 
   // NOVA FUNÇÃO: Finalizar com detrator (seguindo lógica do closeCall)

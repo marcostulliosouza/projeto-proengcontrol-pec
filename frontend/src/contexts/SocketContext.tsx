@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useRef, useState } from 'react'; // Adicionar useState
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useAuth } from './AuthContext';
 import type { Chamado } from '../types'; 
@@ -77,25 +77,29 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
 
       // Escutar eventos de atendimento
       socket.on('user_in_attendance', (data) => {
+        console.log('📥 Recebido user_in_attendance:', data);
         setIsUserInAttendance(true);
         setCurrentAttendance(data);
       });
 
       socket.on('attendance_started', (data: AttendanceData) => {
+        console.log('📥 Recebido attendance_started:', data);
         setIsUserInAttendance(true);
         setCurrentAttendance(data);
       });
 
       socket.on('attendance_finished', () => {
+        console.log('📥 Recebido attendance_finished');
         setIsUserInAttendance(false);
         setCurrentAttendance(null);
       });
 
       socket.on('attendance_blocked', (data) => {
+        console.log('📥 Recebido attendance_blocked:', data);
         alert(data.reason);
       });
 
-      socket.on('timers_sync', (timersData: { chamadoId: number; seconds: number }[]) => {
+      socket.on('timers_sync', (timersData: { chamadoId: number; seconds: number; userId?: number }[]) => {
         // Se eu estava em atendimento mas meu timer sumiu
         if (currentAttendance) {
           const meuTimer = timersData.find(timer => timer.chamadoId === currentAttendance.chamadoId);
@@ -109,12 +113,12 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
 
       socket.on('active_attendances_updated', (atendimentos: AttendanceData[]) => {
         // Atualizar lista de atendimentos ativos
-        console.log('Atendimentos atualizados:', atendimentos);
+        console.log('📥 Atendimentos atualizados:', atendimentos);
       });
 
       socket.on('user_cancelled_attendance', (data) => {
         // Alguém cancelou atendimento
-        console.log('Atendimento cancelado:', data);
+        console.log('📥 Atendimento cancelado:', data);
       });
 
       socket.on('user_finished_attendance', (data) => {
@@ -135,12 +139,13 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
         socket.off('timers_sync');
         socket.off('active_attendances_updated');
         socket.off('user_cancelled_attendance');
+        socket.off('user_finished_attendance');
         console.log('🧹 Limpando conexão WebSocket');
         socket.disconnect();
         socketRef.current = null;
       };
     }
-  }, [state.isAuthenticated, state.user]);
+  }, [state.isAuthenticated, state.user, currentAttendance]); // Adicionar currentAttendance nas dependências
 
   // Implementar todas as funções necessárias
   const lockChamado = (chamadoId: number): Promise<boolean> => {
@@ -208,7 +213,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
 
   const startAttendance = (chamadoId: number): Promise<AttendanceData | null> => {
     return new Promise((resolve) => {
-      console.log('=== INICIANDO STARTATTENDANCE ===');
+      console.log('=== INICIANDO START_ATTENDANCE ===');
       console.log('Socket atual:', socketRef.current);
       console.log('Socket conectado:', socketRef.current?.connected);
       console.log('User:', state.user);
@@ -262,18 +267,18 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
   };
 
   const cancelAttendance = (chamadoId: number) => {
-  if (socketRef.current && state.user) {
-    console.log(`🚫 Emitindo cancelamento via socket: chamado ${chamadoId}`);
-    
-    socketRef.current.emit('cancel_attendance', {
-      chamadoId,
-      userId: state.user.id
-    });
-    
-    // Atualizar estado local imediatamente
-    setIsUserInAttendance(false);
-    setCurrentAttendance(null);
-  }
+    if (socketRef.current && state.user) {
+      console.log(`🚫 Emitindo cancelamento via socket: chamado ${chamadoId}`);
+      
+      socketRef.current.emit('cancel_attendance', {
+        chamadoId,
+        userId: state.user.id
+      });
+      
+      // Atualizar estado local imediatamente
+      setIsUserInAttendance(false);
+      setCurrentAttendance(null);
+    }
   };
 
   const finishAttendance = () => {

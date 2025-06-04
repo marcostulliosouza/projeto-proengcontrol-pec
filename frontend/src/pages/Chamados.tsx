@@ -411,6 +411,7 @@ const handleFinalizarChamadoDireto = async (chamado: Chamado) => {
       render: (_: unknown, item: Chamado & { colaborador_nome?: string }) => {
         const timer = getTimer(item.cha_id);
         
+        // Se o chamado está sendo atendido, mostrar o timer
         if (timer) {
           return (
             <div className="space-y-1">
@@ -421,10 +422,24 @@ const handleFinalizarChamadoDireto = async (chamado: Chamado) => {
             </div>
           );
         }
+
+        // Se o status é "em andamento" mas não há timer (dados desatualizados)
+        if (item.cha_status === 2) {
+          return (
+            <div className="space-y-1">
+              <span className="text-sm font-medium text-orange-600">
+                {item.colaborador_nome || 'Carregando...'}
+              </span>
+              <div className="text-xs text-orange-600">
+                🔄 Sincronizando...
+              </div>
+            </div>
+          );
+        }
         
         return (
           <span className="text-sm text-gray-500">
-            {item.colaborador_nome || 'Não atribuído'}
+            Não atribuído
           </span>
         );
       }
@@ -447,7 +462,8 @@ const handleFinalizarChamadoDireto = async (chamado: Chamado) => {
         const timer = getTimer(item.cha_id);
         const isBeingAttended = !!timer;
         const userIsBusy = isUserInAttendance && currentAttendance?.chamadoId !== item.cha_id;
-        
+        const isMyAttendance = timer?.userId === currentAttendance?.userId; // VERIFICAR SE É MEU ATENDIMENTO
+  
         return (
           <div className="flex space-x-1">
             <Button
@@ -460,6 +476,7 @@ const handleFinalizarChamadoDireto = async (chamado: Chamado) => {
               👁️
             </Button>
             
+            {/* Botão de Atender - só aparece se chamado está aberto */}
             {item.cha_status === 1 && (
               <Button
                 size="sm"
@@ -468,7 +485,7 @@ const handleFinalizarChamadoDireto = async (chamado: Chamado) => {
                 disabled={isBeingAttended || userIsBusy}
                 title={
                   isBeingAttended
-                    ? 'Chamado já está sendo atendido'
+                    ? `Sendo atendido por ${timer.userName}`
                     : userIsBusy 
                     ? `Você está atendendo chamado #${currentAttendance?.chamadoId}`
                     : 'Atender Chamado'
@@ -479,21 +496,31 @@ const handleFinalizarChamadoDireto = async (chamado: Chamado) => {
               </Button>
             )}
 
-            {(item.cha_status === 2 && timer?.userId === currentAttendance?.userId) && (
+            {/* Botão de Finalizar - SÓ APARECE SE É MEU ATENDIMENTO */}
+            {(item.cha_status === 2 && isMyAttendance) && (
               <Button
                 size="sm"
                 variant="danger"
                 onClick={() => handleFinalizarChamadoDireto(item)}
                 className="!px-2 !py-1 !text-xs"
-                title="Finalizar Chamado"
+                title="Finalizar Meu Atendimento"
               >
                 🏁
               </Button>
             )}
+            {/* Indicador visual para outros usuários */}
+            {(item.cha_status === 2 && !isMyAttendance && timer) && (
+              <div 
+                className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded border"
+                title={`Sendo atendido por ${timer.userName}`}
+              >
+                👤 {timer.userName}
+              </div>
+            )}
           </div>
         );
       },
-      className: 'w-20',
+      className: 'w-32',
     }
   ];
 
