@@ -10,7 +10,10 @@ import {
   getTipos,
   getStatusChamado,
   getProdutosByCliente,
-  getAcoes
+  getAcoes,
+  getDetratoresByTipo,
+  getAcoesByDetrator,
+  getRelatorioDetratores,
 } from '../controllers/chamadoController';
 import { AtendimentoAtivoModel } from '../models/AtendimentoAtivo';
 import { authenticateToken, requireRole } from '../middlewares/auth';
@@ -18,10 +21,13 @@ import { executeQuery } from '../config/database';
 
 const router = Router();
 
-// ROTA PÚBLICA para debug (MOVER para antes da autenticação)
+// ⚠️ ROTA PÚBLICA - Deve ficar ANTES do authenticateToken
 router.get('/atendimentos-ativos', async (req, res) => {
   try {
+    console.log('📡 Buscando atendimentos ativos...');
     const atendimentos = await AtendimentoAtivoModel.listarAtivos();
+    console.log(`📡 Encontrados ${atendimentos.length} atendimentos ativos`);
+    
     res.json({
       success: true,
       data: atendimentos,
@@ -63,59 +69,135 @@ router.get('/limpar-orfaos', async (req, res) => {
   }
 });
 
+// ROTA para corrigir datas futuras
+router.get('/corrigir-datas-futuras', async (req, res) => {
+  try {
+    console.log('🔧 Iniciando correção de datas futuras...');
+    
+    // 1. Buscar registros com datas futuras
+    const buscarFuturasQuery = `
+      SELECT atc_id, atc_chamado, atc_data_hora_inicio
+      FROM atendimentos_chamados 
+      WHERE atc_data_hora_termino IS NULL 
+      AND atc_data_hora_inicio > NOW()
+    `;
+    
+    const registrosFuturos = await executeQuery(buscarFuturasQuery);
+    console.log(`📅 Encontrados ${registrosFuturos.length} registros com datas futuras`);
+    
+    if (registrosFuturos.length > 0) {
+      // 2. Corrigir datas futuras para agora
+      const corrigirQuery = `
+        UPDATE atendimentos_chamados 
+        SET atc_data_hora_inicio = NOW() 
+        WHERE atc_data_hora_termino IS NULL 
+        AND atc_data_hora_inicio > NOW()
+      `;
+      
+      const resultado = await executeQuery(corrigirQuery);
+      console.log(`✅ Corrigidos ${resultado.affectedRows} registros`);
+      
+      // 3. Atualizar também os chamados correspondentes
+      const atualizarChamadosQuery = `
+        UPDATE chamados 
+        SET cha_data_hora_atendimento = NOW() 
+        WHERE cha_id IN (
+          SELECT DISTINCT atc_chamado 
+          FROM atendimentos_chamados 
+          WHERE atc_data_hora_termino IS NULL
+        )
+        AND cha_status = 2
+      `;
+      
+      await executeQuery(atualizarChamadosQuery);
+      
+      res.json({
+        success: true,
+        message: `Corrigidos ${resultado.affectedRows} registros com datas futuras`,
+        registrosCorrigidos: registrosFuturos,
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      res.json({
+        success: true,
+        message: 'Nenhum registro com data futura encontrado',
+        timestamp: new Date().toISOString()
+      });
+    }
+  } catch (error) {
+    console.error('Erro ao corrigir datas futuras:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao corrigir datas futuras',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
 
-// Todas as rotas requerem autenticação
+// ROTA para limpeza forçada de dados inconsistentes
+router.get('/limpar-dados-inconsistentes', async (req, res) => {
+  try {
+    // Limpar registros com datas futuras ou muito antigas
+    const query1 = `
+      UPDATE atendimentos_chamados 
+      SET atc_data_hora_termino = NOW() 
+      WHERE atc_data_hora_termino IS NULL 
+      AND (
+        atc_data_hora_inicio < DATE_SUB(NOW(), INTERVAL 1 DAY) 
+        OR atc_data_hora_inicio > NOW()
+      )
+    `;
+    
+    // Limpar chamados órfãos (status 2 sem atendimento ativo)
+    const query2 = `
+      UPDATE chamados 
+      SET cha_status = 1, cha_data_hora_atendimento = NULL 
+      WHERE cha_status = 2 
+      AND cha_id NOT IN (
+        SELECT DISTINCT atc_chamado 
+        FROM atendimentos_chamados 
+        WHERE atc_data_hora_termino IS NULL
+      )
+    `;
+    
+    const [result1, result2] = await Promise.all([
+      executeQuery(query1),
+      executeQuery(query2)
+    ]);
+    
+    res.json({
+      success: true,
+      message: `Limpeza concluída: ${result1.affectedRows} atendimentos + ${result2.affectedRows} chamados corrigidos`,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Erro na limpeza',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+router.get('/detratores/:tipoId', getDetratoresByTipo);
+router.get('/acoes/detrator/:detratorId', getAcoesByDetrator);
+router.get('/relatorio/detratores', getRelatorioDetratores);
+// router.get('/:id/historico', getHistoricoAtendimentos);
+
+// ⚠️ AUTENTICAÇÃO OBRIGATÓRIA A PARTIR DAQUI
 router.use(authenticateToken);
 
-// GET /api/v1/chamados - Listar chamados
+// Resto das rotas protegidas...
 router.get('/', getChamados);
-
-// GET /api/v1/chamados/tipos - Obter tipos de chamado
 router.get('/tipos', getTipos);
-
-// GET /api/v1/chamados/status - Obter status de chamado
 router.get('/status', getStatusChamado);
-
-// GET /api/v1/chamados/acoes - Obter ações
 router.get('/acoes', getAcoes);
-
-// // GET /api/v1/chamados/atendimentos-ativos - MOVER PARA CIMA
-// router.get('/atendimentos-ativos', async (req, res) => {
-//   try {
-//     const atendimentos = await AtendimentoAtivoModel.listarAtivos();
-//     res.json({
-//       success: true,
-//       data: atendimentos,
-//       timestamp: new Date().toISOString()
-//     });
-//   } catch (error) {
-//     res.status(500).json({
-//       success: false,
-//       message: 'Erro ao buscar atendimentos ativos',
-//       timestamp: new Date().toISOString()
-//     });
-//   }
-// });
-
-// GET /api/v1/chamados/produtos/:clienteId - Obter produtos por cliente
 router.get('/produtos/:clienteId', getProdutosByCliente);
-
-// GET /api/v1/chamados/:id - Obter chamado específico
 router.get('/:id', getChamado);
-
-// POST /api/v1/chamados - Criar chamado
 router.post('/', createChamado);
-
-// PUT /api/v1/chamados/:id - Atualizar chamado
 router.put('/:id', updateChamado);
-
-// PUT /api/v1/chamados/:id/iniciar - Iniciar atendimento
 router.put('/:id/iniciar', iniciarAtendimento);
-
-// PUT /api/v1/chamados/:id/cancelar - Cancelar atendimento
 router.put('/:id/cancelar', cancelarAtendimento);
-
-// PUT /api/v1/chamados/:id/finalizar - Finalizar chamado
-router.put('/:id/finalizar', requireRole([2, 3, 4, 5]), finalizarChamado); // Engenheiro+
+router.put('/:id/finalizar', requireRole([2, 3, 4, 5]), finalizarChamado);
 
 export default router;

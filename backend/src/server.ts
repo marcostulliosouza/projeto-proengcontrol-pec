@@ -37,6 +37,8 @@ const io = new SocketServer(server, {
   }
 });
 
+app.set('io', io);
+
 // Middleware de segurança
 app.use(helmet());
 
@@ -184,17 +186,16 @@ io.on('connection', (socket) => {
     const { userId } = data;
     
     try {
-      // Buscar atendimento ativo do usuário
       const atendimentoAtivo = await AtendimentoAtivoModel.buscarPorColaborador(userId);
       
       if (atendimentoAtivo) {
+        // Emitir ANTES de finalizar
         socket.emit('attendance_finished');
         socket.broadcast.emit('user_finished_attendance', {
           userId,
           chamadoId: atendimentoAtivo.atc_chamado
         });
         
-        // Broadcast atualização geral
         await broadcastActiveAttendances();
       }
     } catch (error) {
@@ -207,18 +208,29 @@ io.on('connection', (socket) => {
     const { chamadoId, userId } = data;
     
     try {
+      console.log(`🚫 Socket: Cancelando atendimento chamado ${chamadoId} do usuário ${userId}`);
+      
       await AtendimentoAtivoModel.cancelar(chamadoId);
       
+      // Emitir eventos IMEDIATAMENTE e para todos
       socket.emit('attendance_cancelled');
-      socket.broadcast.emit('user_cancelled_attendance', {
+      io.emit('user_cancelled_attendance', {
         userId,
         chamadoId
       });
       
+      console.log(`✅ Socket: Atendimento ${chamadoId} cancelado e eventos emitidos`);
+      
       // Broadcast atualização geral
-      await broadcastActiveAttendances();
+      setTimeout(async () => {
+        await broadcastActiveAttendances();
+      }, 500);
+      
     } catch (error) {
       console.error('Erro ao cancelar atendimento:', error);
+      socket.emit('attendance_error', {
+        message: 'Erro ao cancelar atendimento'
+      });
     }
   });
 

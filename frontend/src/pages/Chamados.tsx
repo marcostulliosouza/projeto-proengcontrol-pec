@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, Table, Button, Input, Select, Pagination, Modal } from '../components/ui';
 import { ChamadoService, type TipoChamado, type StatusChamado, type Cliente } from '../services/chamadoService';
 import { useSocket } from '../contexts/SocketContext';
 import { useChamadosRealTime } from '../hooks/useChamadosRealTime';
-import type { Chamado, FilterState, PaginationInfo } from '../types';
+import type { Chamado, FilterState, PaginationInfo, Acao } from '../types';
 import ChamadoForm from '../components/forms/ChamadoForm';
 import ChamadoAtendimento from '../components/chamados/ChamadoAtendimento';
 
@@ -33,6 +33,12 @@ const Chamados: React.FC = () => {
   const [atendimentoModalOpen, setAtendimentoModalOpen] = useState(false);
   const [chamadoAtendimento, setChamadoAtendimento] = useState<Chamado | null>(null);
 
+  const [finalizarModalOpen, setFinalizarModalOpen] = useState(false);
+  const [chamadoParaFinalizar, setChamadoParaFinalizar] = useState<Chamado | null>(null);
+  const [acoesFinalizar, setAcoesFinalizar] = useState<Acao[]>([]);
+  const [selectedAcaoFinalizar, setSelectedAcaoFinalizar] = useState<number | undefined>();
+  const [loadingFinalizar, setLoadingFinalizar] = useState(false);
+
   // Dados auxiliares
   const [tipos, setTipos] = useState<TipoChamado[]>([]);
   const [status, setStatus] = useState<StatusChamado[]>([]);
@@ -52,15 +58,67 @@ const Chamados: React.FC = () => {
     getTimer
   } = useChamadosRealTime(initialChamados);
 
+  // Função para abrir modal de finalização direto da tabela
+const handleFinalizarChamadoDireto = async (chamado: Chamado) => {
+  try {
+    // Verificar se realmente é o usuário que está atendendo
+    const timer = getTimer(chamado.cha_id);
+    if (!timer || timer.userId !== currentAttendance?.userId) {
+      alert('Você não está atendendo este chamado');
+      return;
+    }
 
-  // Auto-refresh a cada 60 segundos
-  useEffect(() => {
-    const interval = setInterval(() => {
-      loadChamados(pagination.currentPage, false);
-    }, 60000);
+    // Carregar ações se ainda não carregou
+    if (acoesFinalizar.length === 0) {
+      const acoesData = await ChamadoService.getAcoes();
+      setAcoesFinalizar(acoesData);
+    }
 
-    return () => clearInterval(interval);
-  }, [pagination.currentPage, filters]);
+    setChamadoParaFinalizar(chamado);
+    setFinalizarModalOpen(true);
+  } catch (error) {
+    console.error('Erro ao abrir modal de finalização:', error);
+    alert('Erro ao abrir modal de finalização');
+  }
+};
+
+// Função para finalizar chamado direto
+const handleConfirmarFinalizacao = async () => {
+  if (!chamadoParaFinalizar || !selectedAcaoFinalizar) {
+    alert('Selecione uma ação para finalizar o chamado');
+    return;
+  }
+
+  try {
+    setLoadingFinalizar(true);
+    console.log(`🏁 Finalizando chamado ${chamadoParaFinalizar.cha_id} com ação ${selectedAcaoFinalizar}`);
+    
+    await ChamadoService.finalizarChamado(chamadoParaFinalizar.cha_id, selectedAcaoFinalizar);
+    
+    // Buscar chamado atualizado
+    const updatedChamado = await ChamadoService.getChamado(chamadoParaFinalizar.cha_id);
+    handleChamadoUpdated(updatedChamado);
+    
+    // Fechar modal
+    setFinalizarModalOpen(false);
+    setChamadoParaFinalizar(null);
+    setSelectedAcaoFinalizar(undefined);
+    
+    console.log('✅ Chamado finalizado com sucesso da tabela');
+    
+  } catch (error) {
+    console.error('Erro ao finalizar chamado:', error);
+    alert('Erro ao finalizar chamado');
+  } finally {
+    setLoadingFinalizar(false);
+  }
+};
+
+  const handleCancelarFinalizacao = () => {
+    setFinalizarModalOpen(false);
+    setChamadoParaFinalizar(null);
+    setSelectedAcaoFinalizar(undefined);
+  };
 
   // Carregar dados auxiliares
   useEffect(() => {
@@ -85,22 +143,32 @@ const Chamados: React.FC = () => {
   // Verificar se usuário tem atendimento ativo ao carregar página
   useEffect(() => {
     if (isUserInAttendance && currentAttendance && !atendimentoModalOpen) {
-      const loadActiveAttendance = async () => {
-        try {
-          const chamado = await ChamadoService.getChamado(currentAttendance.chamadoId);
-          setChamadoAtendimento(chamado);
-          setAtendimentoModalOpen(true);
-        } catch (error) {
-          console.error('Erro ao recuperar atendimento ativo:', error);
-        }
-      };
+      console.log('🔍 Verificando se deve abrir modal de atendimento...');
+      
+      // Verificar se o chamado ainda existe na lista atual
+      const chamadoExiste = chamados.find(c => c.cha_id === currentAttendance.chamadoId);
+      
+      if (chamadoExiste) {
+        console.log('✅ Chamado encontrado, abrindo modal de atendimento');
+        const loadActiveAttendance = async () => {
+          try {
+            const chamado = await ChamadoService.getChamado(currentAttendance.chamadoId);
+            setChamadoAtendimento(chamado);
+            setAtendimentoModalOpen(true);
+          } catch (error) {
+            console.error('Erro ao recuperar atendimento ativo:', error);
+          }
+        };
 
-      loadActiveAttendance();
+        loadActiveAttendance();
+      } else {
+        console.log('⚠️ Chamado não encontrado na lista atual, não abrindo modal');
+      }
     }
-  }, [isUserInAttendance, currentAttendance, atendimentoModalOpen]);
+  }, [isUserInAttendance, currentAttendance, atendimentoModalOpen, chamados]);
 
   // Carregar chamados
-  const loadChamados = async (page = 1, showLoading = true) => {
+  const loadChamados = useCallback(async (page = 1, showLoading = true) => {
     try {
       if (showLoading) setLoading(true);
       const response = await ChamadoService.getChamados(page, 10, filters);
@@ -111,11 +179,19 @@ const Chamados: React.FC = () => {
     } finally {
       if (showLoading) setLoading(false);
     }
-  };
+  }, [filters]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      loadChamados(pagination.currentPage, false);
+    }, 60000);
+
+    return () => clearInterval(interval);
+  }, [pagination.currentPage, filters, loadChamados]);
 
   useEffect(() => {
     loadChamados();
-  }, [filters]);
+  }, [filters, loadChamados]);
 
   const handleSearch = (value: string) => {
     setFilters({ ...filters, search: value });
@@ -283,9 +359,9 @@ const Chamados: React.FC = () => {
       key: 'local_chamado',
       label: 'Local',
       className: 'w-32',
-      render: (value: unknown, item: Chamado) => (
+      render: (_: unknown, item: Chamado & { local_chamado?: string }) => (
         <span className="text-sm">
-          {(item as any).local_chamado || 'NÃO INFORMADO'}
+          {item.local_chamado || 'NÃO INFORMADO'}
         </span>
       )
     },
@@ -332,7 +408,7 @@ const Chamados: React.FC = () => {
       key: 'suporte_responsavel',
       label: 'Suporte Responsável',
       className: 'w-40',
-      render: (_: unknown, item: Chamado) => {
+      render: (_: unknown, item: Chamado & { colaborador_nome?: string }) => {
         const timer = getTimer(item.cha_id);
         
         if (timer) {
@@ -348,7 +424,7 @@ const Chamados: React.FC = () => {
         
         return (
           <span className="text-sm text-gray-500">
-            {(item as any).colaborador_nome || 'Não atribuído'}
+            {item.colaborador_nome || 'Não atribuído'}
           </span>
         );
       }
@@ -400,6 +476,18 @@ const Chamados: React.FC = () => {
                 className="!px-2 !py-1 !text-xs"
               >
                 {isBeingAttended ? '🔒' : userIsBusy ? '🚫' : '🚀'}
+              </Button>
+            )}
+
+            {(item.cha_status === 2 && timer?.userId === currentAttendance?.userId) && (
+              <Button
+                size="sm"
+                variant="danger"
+                onClick={() => handleFinalizarChamadoDireto(item)}
+                className="!px-2 !py-1 !text-xs"
+                title="Finalizar Chamado"
+              >
+                🏁
               </Button>
             )}
           </div>
@@ -615,6 +703,65 @@ const Chamados: React.FC = () => {
           />
         )}
       </Modal>
+      <Modal
+  isOpen={finalizarModalOpen}
+  onClose={handleCancelarFinalizacao}
+  title={`Finalizar Chamado #${chamadoParaFinalizar?.cha_id}`}
+  size="md"
+>
+  {chamadoParaFinalizar && (
+    <div className="space-y-4">
+      <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg">
+        <div className="flex items-center justify-between mb-2">
+          <span className="font-medium text-blue-800">Atendimento em andamento</span>
+          <div className="text-lg font-mono font-bold text-blue-900">
+            {(() => {
+              const timer = getTimer(chamadoParaFinalizar.cha_id);
+              return timer ? formatTimer(timer.seconds) : '00:00';
+            })()}
+          </div>
+        </div>
+        <div className="text-sm text-blue-700">
+          <p><strong>DT:</strong> {chamadoParaFinalizar.cha_DT}</p>
+          <p><strong>Cliente:</strong> {chamadoParaFinalizar.cliente_nome}</p>
+          <p><strong>Descrição:</strong> {chamadoParaFinalizar.cha_descricao}</p>
+        </div>
+      </div>
+
+      <div>
+        <label className="form-label">Ação Realizada *</label>
+        <Select
+          placeholder="Selecione a ação realizada..."
+          value={selectedAcaoFinalizar || ''}
+          onChange={(value) => setSelectedAcaoFinalizar(Number(value))}
+          options={acoesFinalizar.map(acao => ({
+            value: acao.ach_id,
+            label: acao.ach_descricao
+          }))}
+          disabled={loadingFinalizar}
+        />
+      </div>
+
+      <div className="flex justify-end space-x-3 pt-4">
+        <Button
+          variant="secondary"
+          onClick={handleCancelarFinalizacao}
+          disabled={loadingFinalizar}
+        >
+          Cancelar
+        </Button>
+        <Button
+          variant="success"
+          onClick={handleConfirmarFinalizacao}
+          loading={loadingFinalizar}
+          disabled={loadingFinalizar || !selectedAcaoFinalizar}
+        >
+          ✅ Finalizar Chamado
+        </Button>
+      </div>
+    </div>
+  )}
+</Modal>
     </div>
   );
 };

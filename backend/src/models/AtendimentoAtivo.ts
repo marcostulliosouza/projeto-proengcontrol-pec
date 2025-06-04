@@ -1,4 +1,4 @@
-import { executeQuery } from '../config/database';
+import { executeQuery,pool } from '../config/database';
 
 export interface AtendimentoAtivo {
   atc_id: number;
@@ -6,7 +6,6 @@ export interface AtendimentoAtivo {
   atc_colaborador: number;
   atc_data_hora_inicio: string;
   atc_data_hora_termino: string | null;
-  // Campos calculados
   tempo_decorrido?: number;
   colaborador_nome?: string;
   chamado_descricao?: string;
@@ -16,22 +15,58 @@ export interface AtendimentoAtivo {
 }
 
 export class AtendimentoAtivoModel {
-  // Iniciar atendimento (igual ao Python setCallAsBeingAnswered)
+  // Limpar registros órfãos/duplicados ANTES de iniciar
+  static async limparRegistrosOrfaos(chamadoId?: number): Promise<void> {
+  try {
+    if (chamadoId) {
+      // Limpar registros específicos do chamado
+      const query = `
+        DELETE FROM atendimentos_chamados 
+        WHERE atc_chamado = ? AND atc_data_hora_termino IS NULL
+      `;
+      await executeQuery(query, [chamadoId]);
+      console.log(`🧹 Limpados registros do chamado ${chamadoId}`);
+    } else {
+      // Limpar registros muito antigos (mais de 1 dia)
+      const query = `
+        UPDATE atendimentos_chamados 
+        SET atc_data_hora_termino = NOW() 
+        WHERE atc_data_hora_termino IS NULL 
+        AND (
+          atc_data_hora_inicio < DATE_SUB(NOW(), INTERVAL 1 DAY) 
+          OR atc_data_hora_inicio > NOW()
+        )
+      `;
+      
+      const result = await executeQuery(query);
+      console.log(`🧹 Limpados ${result.affectedRows} registros órfãos/futuros`);
+    }
+  } catch (error) {
+    console.error('Erro ao limpar registros órfãos:', error);
+  }
+  }
+
+  // Iniciar atendimento (com limpeza prévia)
   static async iniciar(chamadoId: number, colaboradorId: number): Promise<boolean> {
     try {
-      // Verificar se colaborador já está atendendo algo
+      console.log(`🚀 Iniciando atendimento: Chamado ${chamadoId} por colaborador ${colaboradorId}`);
+      
+      // 1. LIMPAR registros órfãos deste chamado primeiro
+      await this.limparRegistrosOrfaos(chamadoId);
+      
+      // 2. Verificar se colaborador já está atendendo algo
       const colaboradorAtivo = await this.buscarPorColaborador(colaboradorId);
       if (colaboradorAtivo) {
-        throw new Error('Colaborador já está atendendo outro chamado');
+        throw new Error(`Colaborador já está atendendo chamado ${colaboradorAtivo.atc_chamado}`);
       }
 
-      // Verificar se chamado já está sendo atendido
+      // 3. Verificar se chamado já está sendo atendido (após limpeza)
       const chamadoAtivo = await this.buscarPorChamado(chamadoId);
       if (chamadoAtivo) {
-        throw new Error('Chamado já está sendo atendido');
+        throw new Error(`Chamado já está sendo atendido por ${chamadoAtivo.colaborador_nome}`);
       }
 
-      // Verificar se chamado existe e está aberto
+      // 4. Verificar se chamado existe e está aberto
       const chamadoQuery = `
         SELECT cha_id, cha_status 
         FROM chamados 
@@ -43,9 +78,7 @@ export class AtendimentoAtivoModel {
         throw new Error('Chamado não encontrado ou não está aberto');
       }
 
-      // === TRANSAÇÃO IGUAL AO PYTHON ===
-      
-      // 1. Inserir novo atendimento
+      // 5. INSERIR novo atendimento
       const insertQuery = `
         INSERT INTO atendimentos_chamados (
           atc_chamado, atc_colaborador, atc_data_hora_inicio
@@ -54,7 +87,7 @@ export class AtendimentoAtivoModel {
 
       await executeQuery(insertQuery, [chamadoId, colaboradorId]);
       
-      // 2. Atualizar status do chamado para "Em Andamento" (status 2)
+      // 6. Atualizar status do chamado
       const updateQuery = `
         UPDATE chamados 
         SET cha_status = 2, cha_data_hora_atendimento = NOW() 
@@ -63,7 +96,7 @@ export class AtendimentoAtivoModel {
       
       await executeQuery(updateQuery, [chamadoId]);
 
-      console.log(`✅ Atendimento iniciado: Chamado ${chamadoId} por colaborador ${colaboradorId}`);
+      console.log(`✅ Atendimento iniciado com sucesso: Chamado ${chamadoId}`);
       return true;
     } catch (error) {
       console.error('Erro ao iniciar atendimento:', error);
@@ -71,45 +104,39 @@ export class AtendimentoAtivoModel {
     }
   }
 
-  // Finalizar atendimento (igual ao Python closeCall)
+  // Finalizar atendimento (com busca mais específica)
   static async finalizar(chamadoId: number, acaoId?: number): Promise<boolean> {
     try {
-      // === TRANSAÇÃO IGUAL AO PYTHON ===
+      console.log(`🏁 Finalizando atendimento: Chamado ${chamadoId}, Ação: ${acaoId}`);
       
-      // 1. Finalizar atendimento ativo
-      const finalizarAtendimentoQuery = `
+      // 1. Buscar atendimento ativo específico
+      const atendimentoAtivo = await this.buscarPorChamado(chamadoId);
+      if (!atendimentoAtivo) {
+        throw new Error('Nenhum atendimento ativo encontrado para este chamado');
+      }
+
+      // 2. Finalizar atendimento específico por ID
+      const finalizarQuery = `
         UPDATE atendimentos_chamados 
         SET atc_data_hora_termino = NOW()
-        WHERE atc_chamado = ? AND atc_data_hora_termino IS NULL
+        WHERE atc_id = ?
       `;
 
-      const result = await executeQuery(finalizarAtendimentoQuery, [chamadoId]);
+      const result = await executeQuery(finalizarQuery, [atendimentoAtivo.atc_id]);
 
       if (result.affectedRows > 0) {
-        // 2. Se tem ação, inserir na tabela de ações
+        // 3. Atualizar chamado
         if (acaoId) {
-          // Buscar descrição da ação
-          const acaoQuery = `
-            SELECT ach_descricao FROM acoes_chamados WHERE ach_id = ?
+          const updateChamadoQuery = `
+            UPDATE chamados 
+            SET cha_status = 3, 
+                cha_data_hora_termino = NOW(), 
+                cha_acao = ? 
+            WHERE cha_id = ?
           `;
-          const acaoResult = await executeQuery(acaoQuery, [acaoId]);
           
-          if (acaoResult && acaoResult.length > 0) {
-            // 3. Atualizar chamado para status "Fechado" (status 3)
-            const updateChamadoQuery = `
-              UPDATE chamados 
-              SET cha_status = 3, 
-                  cha_data_hora_termino = NOW(), 
-                  cha_acao = ? 
-              WHERE cha_id = ?
-            `;
-            
-            await executeQuery(updateChamadoQuery, [acaoId, chamadoId]);
-            console.log(`✅ Chamado ${chamadoId} finalizado com ação ${acaoId}`);
-          }
-        } else {
-          // Finalizar sem ação - só atualiza atendimento
-          console.log(`✅ Atendimento finalizado sem fechar chamado: ${chamadoId}`);
+          await executeQuery(updateChamadoQuery, [acaoId, chamadoId]);
+          console.log(`✅ Chamado ${chamadoId} finalizado com ação ${acaoId}`);
         }
       }
 
@@ -120,21 +147,26 @@ export class AtendimentoAtivoModel {
     }
   }
 
-  // Cancelar atendimento (igual ao Python giveUpFromCall)
+  // Cancelar atendimento (mais específico)
   static async cancelar(chamadoId: number): Promise<boolean> {
     try {
       console.log(`🚫 Cancelando atendimento do chamado ${chamadoId}`);
       
-      // === IGUAL AO PYTHON giveUpFromCall ===
-      
-      // 1. DELETAR atendimento (não finalizar, deletar!)
-      const deleteAtendimentoQuery = `
+      // 1. Buscar atendimento ativo específico
+      const atendimentoAtivo = await this.buscarPorChamado(chamadoId);
+      if (!atendimentoAtivo) {
+        console.log(`⚠️ Nenhum atendimento ativo encontrado para chamado ${chamadoId}`);
+        return false;
+      }
+
+      // 2. DELETAR atendimento específico por ID
+      const deleteQuery = `
         DELETE FROM atendimentos_chamados 
-        WHERE atc_chamado = ? AND atc_data_hora_termino IS NULL
+        WHERE atc_id = ?
       `;
   
-      // 2. Voltar chamado para status "Aberto" (status 1)
-      const updateChamadoQuery = `
+      // 3. Voltar chamado para status aberto
+      const updateQuery = `
         UPDATE chamados 
         SET cha_status = 1, 
             cha_data_hora_atendimento = NULL,
@@ -142,10 +174,9 @@ export class AtendimentoAtivoModel {
         WHERE cha_id = ?
       `;
   
-      // Executar ambas as queries
       const [deleteResult] = await Promise.all([
-        executeQuery(deleteAtendimentoQuery, [chamadoId]),
-        executeQuery(updateChamadoQuery, [chamadoId])
+        executeQuery(deleteQuery, [atendimentoAtivo.atc_id]),
+        executeQuery(updateQuery, [chamadoId])
       ]);
   
       console.log(`✅ Atendimento cancelado: ${deleteResult.affectedRows} registros removidos`);
@@ -156,57 +187,8 @@ export class AtendimentoAtivoModel {
     }
   }
 
-  // Buscar atendimento ativo por colaborador
+  // Buscar com JOIN mais específico
   static async buscarPorColaborador(colaboradorId: number): Promise<AtendimentoAtivo | null> {
-    try {
-      const query = `
-        SELECT 
-          ac.*,
-          c.col_nome as colaborador_nome,
-          ch.cha_descricao as chamado_descricao,
-          ch.cha_DT,
-          cl.cli_nome as cliente_nome,
-          tc.tch_descricao as tipo_chamado,
-          TIMESTAMPDIFF(SECOND, ac.atc_data_hora_inicio, NOW()) as tempo_decorrido
-        FROM atendimentos_chamados ac
-        LEFT JOIN colaboradores c ON ac.atc_colaborador = c.col_id
-        LEFT JOIN chamados ch ON ac.atc_chamado = ch.cha_id
-        LEFT JOIN clientes cl ON ch.cha_cliente = cl.cli_id
-        LEFT JOIN tipos_chamado tc ON ch.cha_tipo = tc.tch_id
-        WHERE ac.atc_colaborador = ? AND ac.atc_data_hora_termino IS NULL
-      `;
-
-      const results = await executeQuery(query, [colaboradorId]);
-      return results.length > 0 ? results[0] : null;
-    } catch (error) {
-      console.error('Erro ao buscar atendimento por colaborador:', error);
-      throw error;
-    }
-  }
-
-  // Buscar atendimento ativo por chamado
-  static async buscarPorChamado(chamadoId: number): Promise<AtendimentoAtivo | null> {
-    try {
-      const query = `
-        SELECT 
-          ac.*,
-          c.col_nome as colaborador_nome,
-          TIMESTAMPDIFF(SECOND, ac.atc_data_hora_inicio, NOW()) as tempo_decorrido
-        FROM atendimentos_chamados ac
-        LEFT JOIN colaboradores c ON ac.atc_colaborador = c.col_id
-        WHERE ac.atc_chamado = ? AND ac.atc_data_hora_termino IS NULL
-      `;
-
-      const results = await executeQuery(query, [chamadoId]);
-      return results.length > 0 ? results[0] : null;
-    } catch (error) {
-      console.error('Erro ao buscar atendimento por chamado:', error);
-      throw error;
-    }
-  }
-
-  // Listar todos os atendimentos ativos (igual ao Python - para sincronização)
-  static async listarAtivos(): Promise<AtendimentoAtivo[]> {
     try {
       const query = `
         SELECT 
@@ -226,143 +208,173 @@ export class AtendimentoAtivoModel {
         LEFT JOIN chamados ch ON ac.atc_chamado = ch.cha_id
         LEFT JOIN clientes cl ON ch.cha_cliente = cl.cli_id
         LEFT JOIN tipos_chamado tc ON ch.cha_tipo = tc.tch_id
-        WHERE ac.atc_data_hora_termino IS NULL
-        ORDER BY ac.atc_data_hora_inicio ASC
-      `;
-
-      const results = await executeQuery(query);
-      return Array.isArray(results) ? results : [];
-    } catch (error) {
-      console.error('Erro ao listar atendimentos ativos:', error);
-      throw error;
-    }
-  }
-
-  // Obter tempo atual de um atendimento ativo
-  static async getTempoAtual(chamadoId: number): Promise<number> {
-    try {
-      const query = `
-        SELECT TIMESTAMPDIFF(SECOND, atc_data_hora_inicio, NOW()) as tempo_decorrido
-        FROM atendimentos_chamados
-        WHERE atc_chamado = ? AND atc_data_hora_termino IS NULL
-      `;
-
-      const results = await executeQuery(query, [chamadoId]);
-      return results.length > 0 ? results[0].tempo_decorrido : 0;
-    } catch (error) {
-      console.error('Erro ao obter tempo atual:', error);
-      return 0;
-    }
-  }
-
-  // Verificar se algum colaborador está atendendo algum chamado (para verificação inicial)
-  static async verificarAtendimentoAtivo(colaboradorId: number): Promise<{ chamado: number; tempo: number } | null> {
-    try {
-      const query = `
-        SELECT 
-          atc_chamado as chamado,
-          TIMESTAMPDIFF(SECOND, atc_data_hora_inicio, NOW()) as tempo
-        FROM atendimentos_chamados
-        WHERE atc_colaborador = ? AND atc_data_hora_termino IS NULL
+        WHERE ac.atc_colaborador = ? 
+        AND ac.atc_data_hora_termino IS NULL
+        ORDER BY ac.atc_data_hora_inicio DESC
         LIMIT 1
       `;
 
       const results = await executeQuery(query, [colaboradorId]);
       return results.length > 0 ? results[0] : null;
     } catch (error) {
-      console.error('Erro ao verificar atendimento ativo:', error);
-      return null;
-    }
-  }
-
-  // Limpar atendimentos órfãos (útil para manutenção)
-  static async limparAtendimentosOrfaos(horasLimite: number = 2): Promise<number> {
-    try {
-      const query = `
-        UPDATE atendimentos_chamados 
-        SET atc_data_hora_termino = NOW() 
-        WHERE atc_data_hora_termino IS NULL 
-        AND atc_data_hora_inicio < DATE_SUB(NOW(), INTERVAL ? HOUR)
-      `;
-      
-      const result = await executeQuery(query, [horasLimite]);
-      
-      if (result.affectedRows > 0) {
-        console.log(`🧹 Limpados ${result.affectedRows} atendimentos órfãos`);
-      }
-      
-      return result.affectedRows;
-    } catch (error) {
-      console.error('Erro ao limpar atendimentos órfãos:', error);
-      return 0;
-    }
-  }
-
-  // Transferir chamado (igual ao Python transferCallFromTo)
-  static async transferir(chamadoId: number, deColaborador: number, paraColaborador: number): Promise<boolean> {
-    try {
-      // === IGUAL AO PYTHON transferCallFromTo ===
-      
-      // 1. Finalizar atendimento do colaborador atual
-      const finalizarAtualQuery = `
-        UPDATE atendimentos_chamados 
-        SET atc_data_hora_termino = NOW()
-        WHERE atc_chamado = ? AND atc_colaborador = ? AND atc_data_hora_termino IS NULL
-      `;
-
-      // 2. Criar novo atendimento para o novo colaborador
-      const novoAtendimentoQuery = `
-        INSERT INTO atendimentos_chamados (
-          atc_chamado, atc_colaborador, atc_data_hora_inicio
-        ) VALUES (?, ?, NOW())
-      `;
-
-      // Executar ambas as operações
-      await Promise.all([
-        executeQuery(finalizarAtualQuery, [chamadoId, deColaborador]),
-        executeQuery(novoAtendimentoQuery, [chamadoId, paraColaborador])
-      ]);
-
-      console.log(`🔄 Chamado ${chamadoId} transferido de ${deColaborador} para ${paraColaborador}`);
-      return true;
-    } catch (error) {
-      console.error('Erro ao transferir chamado:', error);
+      console.error('Erro ao buscar atendimento por colaborador:', error);
       throw error;
     }
   }
 
-  // Estatísticas de atendimento (para dashboard)
-  static async getEstatisticas(dataInicio?: string, dataFim?: string) {
+  static async buscarPorChamado(chamadoId: number): Promise<AtendimentoAtivo | null> {
     try {
-      let whereClause = 'WHERE ac.atc_data_hora_termino IS NOT NULL';
-      const params: any[] = [];
-
-      if (dataInicio) {
-        whereClause += ' AND DATE(ac.atc_data_hora_inicio) >= ?';
-        params.push(dataInicio);
-      }
-
-      if (dataFim) {
-        whereClause += ' AND DATE(ac.atc_data_hora_inicio) <= ?';
-        params.push(dataFim);
-      }
-
       const query = `
         SELECT 
-          COUNT(*) as total_atendimentos,
-          AVG(TIMESTAMPDIFF(SECOND, ac.atc_data_hora_inicio, ac.atc_data_hora_termino)) as tempo_medio_segundos,
-          MIN(TIMESTAMPDIFF(SECOND, ac.atc_data_hora_inicio, ac.atc_data_hora_termino)) as tempo_minimo_segundos,
-          MAX(TIMESTAMPDIFF(SECOND, ac.atc_data_hora_inicio, ac.atc_data_hora_termino)) as tempo_maximo_segundos,
-          COUNT(DISTINCT ac.atc_colaborador) as colaboradores_distintos
+          ac.atc_id,
+          ac.atc_chamado,
+          ac.atc_colaborador,
+          ac.atc_data_hora_inicio,
+          ac.atc_data_hora_termino,
+          c.col_nome as colaborador_nome,
+          TIMESTAMPDIFF(SECOND, ac.atc_data_hora_inicio, NOW()) as tempo_decorrido
         FROM atendimentos_chamados ac
-        ${whereClause}
+        LEFT JOIN colaboradores c ON ac.atc_colaborador = c.col_id
+        WHERE ac.atc_chamado = ? 
+        AND ac.atc_data_hora_termino IS NULL
+        ORDER BY ac.atc_data_hora_inicio DESC
+        LIMIT 1
       `;
 
-      const results = await executeQuery(query, params);
+      const results = await executeQuery(query, [chamadoId]);
       return results.length > 0 ? results[0] : null;
     } catch (error) {
-      console.error('Erro ao obter estatísticas:', error);
+      console.error('Erro ao buscar atendimento por chamado:', error);
       throw error;
+    }
+  }
+
+  // Listar ativos SEM duplicatas
+  static async listarAtivos(): Promise<AtendimentoAtivo[]> {
+  try {
+    const query = `
+      SELECT 
+        latest_atendimento.*,
+        c.col_nome as colaborador_nome,
+        ch.cha_descricao as chamado_descricao,
+        ch.cha_DT,
+        cl.cli_nome as cliente_nome,
+        tc.tch_descricao as tipo_chamado,
+        TIMESTAMPDIFF(SECOND, latest_atendimento.atc_data_hora_inicio, NOW()) as tempo_decorrido
+      FROM (
+        SELECT 
+          atc_chamado,
+          MAX(atc_id) as latest_atc_id
+        FROM atendimentos_chamados
+        WHERE atc_data_hora_termino IS NULL
+        GROUP BY atc_chamado
+      ) latest
+      JOIN atendimentos_chamados latest_atendimento ON latest_atendimento.atc_id = latest.latest_atc_id
+      LEFT JOIN colaboradores c ON latest_atendimento.atc_colaborador = c.col_id
+      LEFT JOIN chamados ch ON latest_atendimento.atc_chamado = ch.cha_id
+      LEFT JOIN clientes cl ON ch.cha_cliente = cl.cli_id
+      LEFT JOIN tipos_chamado tc ON ch.cha_tipo = tc.tch_id
+      ORDER BY latest_atendimento.atc_data_hora_inicio ASC
+    `;
+
+    const results = await executeQuery(query);
+    return Array.isArray(results) ? results : [];
+  } catch (error) {
+    console.error('Erro ao listar atendimentos ativos:', error);
+    throw error;
+  }
+  }
+
+  // NOVA FUNÇÃO: Finalizar com detrator (seguindo lógica do closeCall)
+  static async finalizarComDetrator(
+      chamadoId: number, 
+      detratorId: number,
+      descricaoAtendimento: string
+    ): Promise<boolean> {
+      try {
+        console.log(`🏁 Finalizando chamado: ${chamadoId}, Detrator: ${detratorId}`);
+        
+        // Validar descrição
+        if (!descricaoAtendimento || descricaoAtendimento.trim().length === 0) {
+          throw new Error('Descrição do atendimento é obrigatória');
+        }
+        
+        if (descricaoAtendimento.trim().length > 250) {
+          throw new Error('Descrição do atendimento deve ter no máximo 250 caracteres');
+        }
+
+        if (isNaN(chamadoId) || isNaN(detratorId)) {
+          throw new Error('IDs devem ser números válidos');
+        }
+
+        
+        // 1. Buscar atendimento ativo específico
+        const atendimentoAtivo = await this.buscarPorChamado(chamadoId);
+        if (!atendimentoAtivo) {
+          throw new Error('Nenhum atendimento ativo encontrado para este chamado');
+        }
+
+        // 2. EXECUTAR AS 3 QUERIES EM TRANSAÇÃO (como no Python)
+        const queries = [];
+        const params = [];
+
+        // Query 1: Atualizar atendimentos_chamados (finalizar atendimento)
+        queries.push(`
+          UPDATE atendimentos_chamados 
+          SET atc_data_hora_termino = NOW()
+          WHERE atc_chamado = ? AND atc_data_hora_termino IS NULL
+        `);
+        params.push([chamadoId]);
+
+        // Query 2: Inserir nova ação (como no Python)
+        queries.push(`
+          INSERT INTO acoes_chamados (ach_descricao, ach_detrator) 
+          VALUES (?, ?)
+        `);
+        params.push([descricaoAtendimento.trim().toUpperCase(), detratorId]);
+
+        // Query 3: Atualizar chamado com LAST_INSERT_ID() (como no Python)
+        queries.push(`
+          UPDATE chamados 
+          SET cha_status = 3, 
+              cha_data_hora_termino = NOW(), 
+              cha_acao = LAST_INSERT_ID()
+          WHERE cha_id = ?
+        `);
+        params.push([chamadoId]);
+
+        // Executar todas as queries em transação
+        await this.executeTransaction(queries, params);
+
+        console.log(`✅ Chamado ${chamadoId} finalizado com detrator ${detratorId} e nova ação criada`);
+        return true;
+      } catch (error) {
+        console.error('Erro ao finalizar atendimento:', error);
+        throw error;
+      }
+    }
+
+  // Helper para executar transação
+  static async executeTransaction(queries: string[], params: any[][]): Promise<void> {
+    const connection = await pool.getConnection();
+    
+    try {
+      await connection.beginTransaction();
+      
+      for (let i = 0; i < queries.length; i++) {
+        console.log(`Executando query ${i + 1}:`, queries[i]);
+        console.log(`Com parâmetros:`, params[i]);
+        await connection.execute(queries[i], params[i]);
+      }
+      
+      await connection.commit();
+      console.log('✅ Transação executada com sucesso');
+    } catch (error) {
+      await connection.rollback();
+      console.error('❌ Erro na transação, rollback executado:', error);
+      throw error;
+    } finally {
+      connection.release();
     }
   }
 }

@@ -96,11 +96,15 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       });
 
       socket.on('timers_sync', (timersData: { chamadoId: number; seconds: number }[]) => {
-        // Processar dados dos timers vindos do servidor
-        timersData.forEach(timerData => {
-          // Emitir evento interno para atualizar timers
-          socket.emit('internal_timer_update', timerData);
-        });
+        // Se eu estava em atendimento mas meu timer sumiu
+        if (currentAttendance) {
+          const meuTimer = timersData.find(timer => timer.chamadoId === currentAttendance.chamadoId);
+          if (!meuTimer) {
+            console.log('⏰ Meu timer sumiu - atendimento finalizado');
+            setIsUserInAttendance(false);
+            setCurrentAttendance(null);
+          }
+        }
       });
 
       socket.on('active_attendances_updated', (atendimentos: AttendanceData[]) => {
@@ -111,6 +115,15 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       socket.on('user_cancelled_attendance', (data) => {
         // Alguém cancelou atendimento
         console.log('Atendimento cancelado:', data);
+      });
+
+      socket.on('user_finished_attendance', (data) => {
+        // Se é meu atendimento que foi finalizado
+        if (currentAttendance && data.chamadoId === currentAttendance.chamadoId) {
+          console.log('🏁 Meu atendimento foi finalizado via API');
+          setIsUserInAttendance(false);
+          setCurrentAttendance(null);
+        }
       });
 
       // Cleanup na desconexão
@@ -249,12 +262,18 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
   };
 
   const cancelAttendance = (chamadoId: number) => {
-    if (socketRef.current && state.user) {
-      socketRef.current.emit('cancel_attendance', {
-        chamadoId,
-        userId: state.user.id
-      });
-    }
+  if (socketRef.current && state.user) {
+    console.log(`🚫 Emitindo cancelamento via socket: chamado ${chamadoId}`);
+    
+    socketRef.current.emit('cancel_attendance', {
+      chamadoId,
+      userId: state.user.id
+    });
+    
+    // Atualizar estado local imediatamente
+    setIsUserInAttendance(false);
+    setCurrentAttendance(null);
+  }
   };
 
   const finishAttendance = () => {

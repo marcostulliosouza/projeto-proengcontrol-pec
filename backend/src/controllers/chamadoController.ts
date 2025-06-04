@@ -3,6 +3,7 @@ import { ChamadoModel } from '../models/Chamado';
 import { AtendimentoAtivoModel } from '../models/AtendimentoAtivo';
 import { ApiResponse, AuthRequest, PaginationParams, FilterParams } from '../types';
 import { asyncHandler } from '../middlewares/errorHandler';
+import { executeQuery } from '../config/database';
 
 export const getChamados = asyncHandler(async (req: Request, res: Response) => {
   const page = parseInt(req.query.page as string) || 1;
@@ -187,37 +188,6 @@ export const iniciarAtendimento = asyncHandler(async (req: AuthRequest, res: Res
   }
 });
 
-export const finalizarChamado = asyncHandler(async (req: AuthRequest, res: Response) => {
-  const id = parseInt(req.params.id);
-  const { acao_id } = req.body;
-  
-  if (isNaN(id) || !acao_id) {
-    res.status(400).json({
-      success: false,
-      message: 'ID e ação são obrigatórios',
-      timestamp: new Date().toISOString()
-    } as ApiResponse);
-    return;
-  }
-
-  try {
-    // USAR NOVO MODELO
-    await AtendimentoAtivoModel.finalizar(id, acao_id);
-
-    res.json({
-      success: true,
-      message: 'Chamado finalizado com sucesso',
-      timestamp: new Date().toISOString()
-    } as ApiResponse);
-  } catch (error) {
-    res.status(400).json({
-      success: false,
-      message: 'Erro ao finalizar chamado',
-      timestamp: new Date().toISOString()
-    } as ApiResponse);
-  }
-});
-
 export const cancelarAtendimento = asyncHandler(async (req: AuthRequest, res: Response) => {
   const id = parseInt(req.params.id);
   
@@ -301,4 +271,253 @@ export const getAcoes = asyncHandler(async (req: Request, res: Response) => {
     data: acoes,
     timestamp: new Date().toISOString()
   } as ApiResponse);
+});
+
+// Buscar detratores por tipo de chamado (seguindo a lógica do Python)
+export const getDetratoresByTipo = asyncHandler(async (req: Request, res: Response) => {
+  const tipoId = parseInt(req.params.tipoId);
+
+  if (isNaN(tipoId)) {
+    res.status(400).json({
+      success: false,
+      message: 'ID do tipo inválido',
+      timestamp: new Date().toISOString()
+    } as ApiResponse);
+    return;
+}
+
+try {
+  // Lógica igual ao Python: busca detratores do tipo OU sem tipo (dtr_tipo IS NULL)
+  const query = `
+    SELECT 
+      d.dtr_id,
+      d.dtr_descricao,
+      d.dtr_tipo,
+      tc.tch_descricao,
+      d.dtr_indicador
+    FROM detratores d
+    LEFT JOIN tipos_chamado tc ON d.dtr_tipo = tc.tch_id
+    WHERE d.dtr_ativo = 1 
+    AND (d.dtr_tipo IS NULL OR d.dtr_tipo = ?)
+    ORDER BY d.dtr_descricao ASC
+  `;
+  
+  const detratores = await executeQuery(query, [tipoId]);
+  
+  res.json({
+    success: true,
+    message: 'Detratores obtidos com sucesso',
+    data: detratores,
+    timestamp: new Date().toISOString()
+  } as ApiResponse);
+} catch (error) {
+  console.error('Erro ao buscar detratores:', error);
+  res.status(500).json({
+    success: false,
+    message: 'Erro ao buscar detratores',
+    timestamp: new Date().toISOString()
+  } as ApiResponse);
+}
+});
+
+// Buscar ações por detrator (baseado na estrutura do banco)
+export const getAcoesByDetrator = asyncHandler(async (req: Request, res: Response) => {
+const detratorId = parseInt(req.params.detratorId);
+
+if (isNaN(detratorId)) {
+  res.status(400).json({
+    success: false,
+    message: 'ID do detrator inválido',
+    timestamp: new Date().toISOString()
+  } as ApiResponse);
+  return;
+}
+
+try {
+  const query = `
+    SELECT ach_id, ach_descricao, ach_detrator
+    FROM acoes_chamados 
+    WHERE ach_detrator = ?
+    ORDER BY ach_descricao ASC
+  `;
+  
+  const acoes = await executeQuery(query, [detratorId]);
+  
+  res.json({
+    success: true,
+    message: 'Ações obtidas com sucesso',
+    data: acoes,
+    timestamp: new Date().toISOString()
+  } as ApiResponse);
+} catch (error) {
+  console.error('Erro ao buscar ações:', error);
+  res.status(500).json({
+    success: false,
+    message: 'Erro ao buscar ações',
+    timestamp: new Date().toISOString()
+  } as ApiResponse);
+}
+});
+
+// Finalizar chamado COM detrator e descrição (seguindo lógica do closeCall)
+export const finalizarChamado = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const id = parseInt(req.params.id);
+  const { detrator_id, descricao_atendimento } = req.body;
+  
+  console.log('🔍 Backend - finalizarChamado chamado com:');
+  console.log('- ID:', id, typeof id);
+  console.log('- Detrator ID:', detrator_id, typeof detrator_id);
+  console.log('- Descrição:', descricao_atendimento, typeof descricao_atendimento);
+  
+  if (isNaN(id)) {
+    res.status(400).json({
+      success: false,
+      message: 'ID do chamado é inválido',
+      timestamp: new Date().toISOString()
+    } as ApiResponse);
+    return;
+  }
+  
+  if (!detrator_id) {
+    res.status(400).json({
+      success: false,
+      message: 'Detrator é obrigatório',
+      timestamp: new Date().toISOString()
+    } as ApiResponse);
+    return;
+  }
+
+  // Validar descrição do atendimento
+  if (!descricao_atendimento || typeof descricao_atendimento !== 'string') {
+    res.status(400).json({
+      success: false,
+      message: 'Descrição do atendimento é obrigatória',
+      timestamp: new Date().toISOString()
+    } as ApiResponse);
+    return;
+  }
+
+  const descricao = descricao_atendimento.trim();
+  if (descricao.length === 0) {
+    res.status(400).json({
+      success: false,
+      message: 'Descrição do atendimento não pode estar vazia',
+      timestamp: new Date().toISOString()
+    } as ApiResponse);
+    return;
+  }
+
+  if (descricao.length > 250) {
+    res.status(400).json({
+      success: false,
+      message: 'Descrição do atendimento deve ter no máximo 250 caracteres',
+      timestamp: new Date().toISOString()
+    } as ApiResponse);
+    return;
+  }
+
+ try {
+    console.log('✅ Validações passaram, finalizando chamado...');
+    
+    // 1. Buscar dados do atendimento ANTES de finalizar
+    const atendimentoAtivo = await AtendimentoAtivoModel.buscarPorChamado(id);
+    
+    // 2. Finalizar o chamado
+    await AtendimentoAtivoModel.finalizarComDetrator(id, detrator_id, descricao);
+
+    // 3. EMITIR EVENTOS WEBSOCKET (pegar io do servidor)
+    const io = (req as any).app.get('io'); // Vamos configurar isso no server.ts
+    
+    if (io && atendimentoAtivo) {
+      console.log('📡 Emitindo eventos WebSocket para finalização');
+      
+      // Emitir para todos que o atendimento foi finalizado
+      io.emit('user_finished_attendance', {
+        userId: atendimentoAtivo.atc_colaborador,
+        chamadoId: id
+      });
+      
+      // Atualizar lista de atendimentos ativos
+      const atendimentosAtivos = await AtendimentoAtivoModel.listarAtivos();
+      io.emit('active_attendances_updated', atendimentosAtivos);
+      
+      // Atualizar timers
+      const timersData = atendimentosAtivos.map(atendimento => ({
+        chamadoId: atendimento.atc_chamado,
+        seconds: atendimento.tempo_decorrido || 0,
+        userId: atendimento.atc_colaborador,
+        userName: atendimento.colaborador_nome,
+        startedBy: atendimento.colaborador_nome,
+        startTime: atendimento.atc_data_hora_inicio
+      }));
+      
+      io.emit('timers_sync', timersData);
+    }
+
+    console.log('✅ Chamado finalizado com sucesso');
+    res.json({
+      success: true,
+      message: 'Chamado finalizado com sucesso',
+      timestamp: new Date().toISOString()
+    } as ApiResponse);
+  } catch (error) {
+    console.error('❌ Erro ao finalizar chamado:', error);
+    res.status(400).json({
+      success: false,
+      message: error instanceof Error ? error.message : 'Erro ao finalizar chamado',
+      timestamp: new Date().toISOString()
+    } as ApiResponse);
+  }
+});
+
+// Relatório de detratores
+export const getRelatorioDetratores = asyncHandler(async (req: Request, res: Response) => {
+  const { dataInicio, dataFim } = req.query;
+
+  if (!dataInicio || !dataFim) {
+    res.status(400).json({
+      success: false,
+      message: 'Data de início e fim são obrigatórias',
+      timestamp: new Date().toISOString()
+    } as ApiResponse);
+    return;
+  }
+
+  try {
+    const query = `
+      SELECT 
+        d.dtr_id,
+        d.dtr_descricao as detrator_descricao,
+        d.dtr_indicador,
+        tc.tch_descricao as tipo_chamado,
+        COUNT(DISTINCT c.cha_id) as total_ocorrencias,
+        COUNT(DISTINCT ac.ach_id) as total_acoes_distintas,
+        AVG(TIMESTAMPDIFF(MINUTE, c.cha_data_hora_abertura, c.cha_data_hora_termino)) as tempo_medio_resolucao,
+        GROUP_CONCAT(DISTINCT ac.ach_descricao SEPARATOR '; ') as acoes_utilizadas
+      FROM chamados c
+      INNER JOIN acoes_chamados ac ON c.cha_acao = ac.ach_id
+      INNER JOIN detratores d ON ac.ach_detrator = d.dtr_id
+      LEFT JOIN tipos_chamado tc ON d.dtr_tipo = tc.tch_id
+      WHERE c.cha_status = 3 
+      AND DATE(c.cha_data_hora_termino) BETWEEN ? AND ?
+      GROUP BY d.dtr_id, d.dtr_descricao, d.dtr_indicador, tc.tch_descricao
+      ORDER BY total_ocorrencias DESC, d.dtr_indicador DESC
+    `;
+    
+    const relatorio = await executeQuery(query, [dataInicio, dataFim]);
+    
+    res.json({
+      success: true,
+      message: 'Relatório de detratores obtido com sucesso',
+      data: relatorio,
+      timestamp: new Date().toISOString()
+    } as ApiResponse);
+  } catch (error) {
+    console.error('Erro ao gerar relatório de detratores:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao gerar relatório',
+      timestamp: new Date().toISOString()
+    } as ApiResponse);
+  }
 });

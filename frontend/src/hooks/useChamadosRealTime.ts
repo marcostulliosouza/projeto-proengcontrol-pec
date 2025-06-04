@@ -8,80 +8,117 @@ interface Timer {
   startedAt: string;
   startedBy: string;
   userId: number;
-  userName: string;
-}
-
-interface ChamadoLock {
-  chamadoId: number;
-  lockedBy: {
-    userId: number;
-    userName: string;
-  };
+  userName?: string;
+  realStartTime: Date; // NOVO: tempo real de início
 }
 
 export const useChamadosRealTime = (initialChamados: Chamado[]) => {
   const [chamados, setChamados] = useState<Chamado[]>(initialChamados);
   const [timers, setTimers] = useState<Timer[]>([]);
-  const [lockedChamados, setLockedChamados] = useState<ChamadoLock[]>([]);
   const { socket } = useSocket();
 
-  // Atualizar quando chamados iniciais mudarem
   useEffect(() => {
     setChamados(initialChamados);
   }, [initialChamados]);
 
+  // Timer local que atualiza a cada segundo
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTimers(prevTimers => 
+        prevTimers.map(timer => ({
+          ...timer,
+          seconds: Math.floor((new Date().getTime() - timer.realStartTime.getTime()) / 1000)
+        }))
+      );
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, []);
+
   useEffect(() => {
     if (!socket) return;
 
-    console.log('🔌 Socket conectado, configurando listeners...');
+    console.log('🔌 Configurando listeners do real-time...');
   
-    // === LISTENERS PRINCIPAIS ===
-    
-    // 1. Sincronização de timers do servidor (a cada 5 segundos)
-    const handleTimersSync = (timersData: Timer[]) => {
-      console.log('📊 TIMERS SYNC RECEBIDOS:', timersData.length, 'timers');
+    // Sincronização principal
+    const handleActiveAttendances = (atendimentos: { 
+      atc_chamado: number; 
+      atc_data_hora_inicio: string; 
+      colaborador_nome?: string; 
+      atc_colaborador: number; 
+    }[]) => {
+      console.log('🔄 ATENDIMENTOS RECEBIDOS:', atendimentos.length);
       
-      timersData.forEach((timer, index) => {
-        console.log(`⏱️ Timer ${index + 1}:`, {
-          chamadoId: timer.chamadoId,
-          seconds: timer.seconds,
-          userName: timer.userName,
-          userId: timer.userId
-        });
-      });
-      
-      setTimers(timersData);
-    };
+      // Remover duplicatas pelo chamado_id
+      const uniqueAtendimentos = atendimentos.reduce((acc: { 
+        atc_chamado: number; 
+        atc_data_hora_inicio: string; 
+        colaborador_nome?: string; 
+        atc_colaborador: number; 
+      }[], current) => {
+        const exists = acc.find(item => item.atc_chamado === current.atc_chamado);
+        if (!exists) {
+          acc.push(current);
+        } else {
+          // Manter o mais recente se houver duplicatas
+          if (new Date(current.atc_data_hora_inicio) > new Date(exists.atc_data_hora_inicio)) {
+            const index = acc.findIndex(item => item.atc_chamado === current.atc_chamado);
+            acc[index] = current;
+          }
+        }
+        return acc;
+      }, []);
 
-    // 2. Atendimentos ativos atualizados (quando há mudanças)
-    const handleActiveAttendances = (atendimentos: any[]) => {
-      console.log('🔄 ATENDIMENTOS ATIVOS RECEBIDOS:', atendimentos.length, 'atendimentos');
+      console.log(`🔄 Removidas duplicatas: ${atendimentos.length} -> ${uniqueAtendimentos.length}`);
       
-      // Converter atendimentos para formato Timer
-      const newTimers = atendimentos.map((atendimento, index) => {
-        console.log(`👤 Atendimento ${index + 1}:`, {
-          chamadoId: atendimento.atc_chamado,
-          colaborador: atendimento.colaborador_nome,
-          tempo: atendimento.tempo_decorrido
-        });
+      const newTimers = uniqueAtendimentos.map(atendimento => {
+        const startTime = new Date(atendimento.atc_data_hora_inicio);
+        const currentSeconds = Math.floor((new Date().getTime() - startTime.getTime()) / 1000);
         
         return {
           chamadoId: atendimento.atc_chamado,
-          seconds: atendimento.tempo_decorrido || 0,
+          seconds: currentSeconds,
           startedAt: atendimento.atc_data_hora_inicio,
           startedBy: atendimento.colaborador_nome || 'Usuário',
           userId: atendimento.atc_colaborador,
-          userName: atendimento.colaborador_nome || 'Usuário'
+          userName: atendimento.colaborador_nome || 'Usuário',
+          realStartTime: startTime // TEMPO REAL para cálculo contínuo
         };
       });
       
-      console.log('🔄 Timers convertidos:', newTimers);
       setTimers(newTimers);
     };
 
-    // === EVENTOS DE USUÁRIOS ===
+    // Sincronização de timers (mais precisa)
+    const handleTimersSync = (timersData: { 
+      chamadoId: number; 
+      startedAt?: string; 
+      startTime?: string; 
+      startedBy?: string; 
+      userName?: string; 
+      userId: number; 
+    }[]) => {
+      console.log('📊 TIMERS SYNC:', timersData.length);
+      
+      const syncedTimers = timersData.map(timerData => {
+        const startTime = new Date(timerData.startedAt || timerData.startTime || 0);
+        const currentSeconds = Math.floor((new Date().getTime() - startTime.getTime()) / 1000);
+        
+        return {
+          chamadoId: timerData.chamadoId,
+          seconds: currentSeconds, // Recalcular sempre
+          startedAt: timerData.startedAt || timerData.startTime || '',
+          startedBy: timerData.startedBy || timerData.userName || 'Unknown',
+          userId: timerData.userId,
+          userName: timerData.userName || timerData.startedBy,
+          realStartTime: startTime
+        };
+      });
+      
+      setTimers(syncedTimers);
+    };
 
-    // 3. Usuário iniciou atendimento
+    // Usuário iniciou atendimento
     const handleUserStartedAttendance = (data: { 
       chamadoId: number; 
       startTime: string; 
@@ -90,114 +127,53 @@ export const useChamadosRealTime = (initialChamados: Chamado[]) => {
     }) => {
       console.log('🚀 Usuário iniciou atendimento:', data);
       
+      const startTime = new Date(data.startTime);
       const newTimer: Timer = {
         chamadoId: data.chamadoId,
         seconds: 0,
         startedAt: data.startTime,
         startedBy: data.userName,
         userId: data.userId,
-        userName: data.userName
+        userName: data.userName,
+        realStartTime: startTime
       };
       
       setTimers(prev => {
-        // Remove timer existente para este chamado e adiciona o novo
         const filtered = prev.filter(timer => timer.chamadoId !== data.chamadoId);
         return [...filtered, newTimer];
       });
     };
 
-    // 4. Usuário finalizou atendimento
-    const handleUserFinishedAttendance = (data: { chamadoId: number; userId?: number }) => {
+    // Usuário finalizou/cancelou
+    const handleUserFinishedAttendance = (data: { chamadoId: number }) => {
       console.log('✅ Usuário finalizou atendimento:', data);
-      
-      setTimers(prev => 
-        prev.filter(timer => timer.chamadoId !== data.chamadoId)
-      );
+      setTimers(prev => prev.filter(timer => timer.chamadoId !== data.chamadoId));
     };
 
-    // 5. Usuário cancelou atendimento
-    const handleUserCancelledAttendance = (data: { chamadoId: number; userId?: number }) => {
+    const handleUserCancelledAttendance = (data: { chamadoId: number }) => {
       console.log('🚫 Usuário cancelou atendimento:', data);
-      
-      setTimers(prev => 
-        prev.filter(timer => timer.chamadoId !== data.chamadoId)
-      );
+      setTimers(prev => prev.filter(timer => timer.chamadoId !== data.chamadoId));
     };
 
-    // === EVENTOS DE LOCK (se implementados) ===
-
-    // 6. Chamado foi locked para visualização
-    const handleChamadoLocked = (data: { 
-      chamadoId: number; 
-      lockedBy: { userId: number; userName: string } 
-    }) => {
-      console.log('🔒 Chamado locked:', data);
-      
-      setLockedChamados(prev => {
-        const filtered = prev.filter(lock => lock.chamadoId !== data.chamadoId);
-        return [...filtered, {
-          chamadoId: data.chamadoId,
-          lockedBy: data.lockedBy
-        }];
-      });
-    };
-
-    // 7. Chamado foi unlocked
-    const handleChamadoUnlocked = (data: { chamadoId: number }) => {
-      console.log('🔓 Chamado unlocked:', data);
-      
-      setLockedChamados(prev => 
-        prev.filter(lock => lock.chamadoId !== data.chamadoId)
-      );
-    };
-
-    // 8. Chamado foi atualizado por outro usuário
-    const handleChamadoChanged = (updatedChamado: Chamado) => {
-      console.log('📝 Chamado atualizado:', updatedChamado.cha_id);
-      
-      setChamados(prev => 
-        prev.map(chamado => 
-          chamado.cha_id === updatedChamado.cha_id ? updatedChamado : chamado
-        )
-      );
-    };
-
-    // === REGISTRAR TODOS OS LISTENERS ===
+    // Registrar listeners
     socket.on('timers_sync', handleTimersSync);
     socket.on('active_attendances_updated', handleActiveAttendances);
     socket.on('user_started_attendance', handleUserStartedAttendance);
     socket.on('user_finished_attendance', handleUserFinishedAttendance);
     socket.on('user_cancelled_attendance', handleUserCancelledAttendance);
-    socket.on('chamado_locked', handleChamadoLocked);
-    socket.on('chamado_unlocked', handleChamadoUnlocked);
-    socket.on('chamado_changed', handleChamadoChanged);
 
-    // === CLEANUP ===
     return () => {
-      console.log('🧹 Limpando listeners do real-time...');
-      
       socket.off('timers_sync', handleTimersSync);
       socket.off('active_attendances_updated', handleActiveAttendances);
       socket.off('user_started_attendance', handleUserStartedAttendance);
       socket.off('user_finished_attendance', handleUserFinishedAttendance);
       socket.off('user_cancelled_attendance', handleUserCancelledAttendance);
-      socket.off('chamado_locked', handleChamadoLocked);
-      socket.off('chamado_unlocked', handleChamadoUnlocked);
-      socket.off('chamado_changed', handleChamadoChanged);
     };
   }, [socket]);
 
-  // === FUNÇÕES AUXILIARES ===
-
   const getTimer = useCallback((chamadoId: number): Timer | undefined => {
-    const timer = timers.find(timer => timer.chamadoId === chamadoId);
-    console.log(`🔍 Buscando timer para chamado ${chamadoId}:`, timer ? 'ENCONTRADO' : 'NÃO ENCONTRADO');
-    return timer;
+    return timers.find(timer => timer.chamadoId === chamadoId);
   }, [timers]);
-
-  const isLocked = useCallback((chamadoId: number): ChamadoLock | undefined => {
-    return lockedChamados.find(lock => lock.chamadoId === chamadoId);
-  }, [lockedChamados]);
 
   const formatTimer = useCallback((seconds: number): string => {
     const hours = Math.floor(seconds / 3600);
@@ -210,55 +186,11 @@ export const useChamadosRealTime = (initialChamados: Chamado[]) => {
     return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   }, []);
 
-  const getTimersByUser = useCallback((userId: number): Timer[] => {
-    return timers.filter(timer => timer.userId === userId);
-  }, [timers]);
-
-  const isUserAttending = useCallback((chamadoId: number): string | null => {
-    const timer = getTimer(chamadoId);
-    return timer ? timer.userName : null;
-  }, [getTimer]);
-
-  const getTotalActiveAttendances = useCallback((): number => {
-    return timers.length;
-  }, [timers]);
-
-  const getActiveAttendancesByStatus = useCallback(() => {
-    return {
-      total: timers.length,
-      byUser: timers.reduce((acc, timer) => {
-        acc[timer.userName] = (acc[timer.userName] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>)
-    };
-  }, [timers]);
-
-  // === DEBUG INFO ===
-  useEffect(() => {
-    console.log('📊 Estado atual do real-time:', {
-      chamados: chamados.length,
-      timers: timers.length,
-      lockedChamados: lockedChamados.length,
-      socketConnected: !!socket?.connected
-    });
-  }, [chamados.length, timers.length, lockedChamados.length, socket?.connected]);
-
   return {
-    // Estados principais
     chamados,
     setChamados,
     timers,
-    lockedChamados,
-    
-    // Funções de consulta
     getTimer,
-    isLocked,
     formatTimer,
-    isUserAttending,
-    
-    // Funções de análise
-    getTimersByUser,
-    getTotalActiveAttendances,
-    getActiveAttendancesByStatus,
   };
 };

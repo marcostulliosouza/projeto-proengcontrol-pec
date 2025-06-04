@@ -24,7 +24,7 @@ const dbConfig: DatabaseConfig = {
   connectionLimit: 10,
   waitForConnections: true,
   queueLimit: 0,
-  timezone: '-03:00', // Horário de Brasília
+  timezone: '-03:00',
 };
 
 // Pool de conexões para melhor performance

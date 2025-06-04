@@ -29,9 +29,69 @@ export interface Produto {
 export interface Acao {
   ach_id: number;
   ach_descricao: string;
+  ach_detrator: number;
+}
+
+export interface Detrator {
+  dtr_id: number;
+  dtr_descricao: string;
+  dtr_tipo: number;
+  dtr_indicador: number;
+  dtr_ativo: number;
+}
+
+// export interface FinalizarChamadoData {
+//   detrator_id: number
+//   descricao_atendimento: string;
+// }
+
+export interface AtendimentoHistorico {
+  atc_id: number;
+  atc_chamado: number;
+  atc_colaborador: number;
+  atc_data_hora_inicio: string;
+  atc_data_hora_termino: string | null;
+  atc_descricao_atendimento: string | null;
+  colaborador_nome: string;
+  tempo_decorrido: number;
 }
 
 export class ChamadoService {
+
+  // Finalizar chamado COM descrição do atendimento
+  static async finalizarChamado(id: number, detratorId: number, descricaoAtendimento: string): Promise<void> {
+    return await ApiService.put<void>(`/chamados/${id}/finalizar`, { 
+      detrator_id: detratorId,
+      descricao_atendimento: descricaoAtendimento 
+    });
+  }
+
+  // NOVA: Buscar detratores por tipo de chamado
+  static async getDetratoresByTipo(tipoId: number): Promise<Detrator[]> {
+    return await ApiService.get<Detrator[]>(`/chamados/detratores/${tipoId}`);
+  }
+
+  // NOVA: Buscar ações por detrator
+  static async getAcoesByDetrator(detratorId: number): Promise<Acao[]> {
+    return await ApiService.get<Acao[]>(`/chamados/acoes/detrator/${detratorId}`);
+  }
+
+  // NOVA: Buscar histórico de atendimentos de um chamado
+  static async getHistoricoAtendimentos(id: number): Promise<AtendimentoHistorico[]> {
+    return await ApiService.get<AtendimentoHistorico[]>(`/chamados/${id}/historico`);
+  }
+
+  // NOVA: Relatório de detratores
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  static async getRelatorioDetratores(dataInicio: string, dataFim: string): Promise<any[]> {
+    const params = new URLSearchParams({
+      dataInicio,
+      dataFim
+    });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return await ApiService.get<any[]>(`/chamados/relatorio/detratores?${params}`);
+  }
+
   // Buscar chamados com filtros e paginação
   static async getChamados(
     page: number = 1,
@@ -71,11 +131,6 @@ export class ChamadoService {
   // Iniciar atendimento
   static async iniciarAtendimento(id: number): Promise<void> {
     return await ApiService.put<void>(`/chamados/${id}/iniciar`);
-  }
-
-  // Finalizar chamado
-  static async finalizarChamado(id: number, acaoId: number): Promise<void> {
-    return await ApiService.put<void>(`/chamados/${id}/finalizar`, { acao_id: acaoId });
   }
 
   // Endpoints auxiliares

@@ -7,6 +7,11 @@ export interface User {
   categoriaNome: string;
 }
 
+export interface Acao {
+  ach_id: number,
+  ach_descricao: string;
+}
+
 export interface AuthState {
   isAuthenticated: boolean;
   user: User | null;
