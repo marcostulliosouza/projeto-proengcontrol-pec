@@ -1,3 +1,5 @@
+// Em backend/src/server.ts - VERSÃO COMPLETA ATUALIZADA:
+
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -14,13 +16,19 @@ import chamadoRoutes from './routes/chamadoRoutes';
 
 import { testConnection } from './config/database';
 import { errorHandler } from './middlewares/errorHandler';
+import { AtendimentoAtivoModel } from './models/AtendimentoAtivo';
 
 // Configurar variáveis de ambiente
 dotenv.config();
 
 const app = express();
+const PORT = process.env.PORT || 3001;
+const API_PREFIX = process.env.API_PREFIX || '/api/v1';
 
+// Criar servidor HTTP
 const server = createServer(app);
+
+// Configurar Socket.IO
 const io = new SocketServer(server, {
   cors: {
     origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
@@ -28,10 +36,6 @@ const io = new SocketServer(server, {
     credentials: true
   }
 });
-
-
-const PORT = process.env.PORT || 3001;
-const API_PREFIX = process.env.API_PREFIX || '/api/v1';
 
 // Middleware de segurança
 app.use(helmet());
@@ -55,174 +59,219 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('combined'));
 }
 
-// Store para controlar locks de chamados
-const usersInAttendance = new Map(); // userId -> { chamadoId, startTime, socketId }
-const chamadoLocks = new Map();
+// Store para usuários conectados
 const activeUsers = new Map();
 
+// Função para broadcast de atendimentos ativos
+const broadcastActiveAttendances = async () => {
+  try {
+    const atendimentos = await AtendimentoAtivoModel.listarAtivos();
+    io.emit('active_attendances_updated', atendimentos);
+  } catch (error) {
+    console.error('Erro ao fazer broadcast dos atendimentos:', error);
+  }
+};
+
+// Timer para atualizar tempos automaticamente a cada 5 segundos
+setInterval(async () => {
+  try {
+    const atendimentos = await AtendimentoAtivoModel.listarAtivos();
+    
+    // Broadcast apenas os timers atualizados
+    const timersData = atendimentos.map(atendimento => ({
+      chamadoId: atendimento.atc_chamado,
+      seconds: atendimento.tempo_decorrido || 0,
+      userId: atendimento.atc_colaborador,
+      userName: atendimento.colaborador_nome,
+      startedBy: atendimento.colaborador_nome,
+      startTime: atendimento.atc_data_hora_inicio
+    }));
+
+    io.emit('timers_sync', timersData);
+  } catch (error) {
+    console.error('Erro na sincronização automática:', error);
+  }
+}, 5000); // A cada 5 segundos
+
+// Limpeza automática a cada 2 minutos (pode manter se necessário)
+setInterval(async () => {
+  try {
+    // Limpar conexões órfãs se necessário
+    await broadcastActiveAttendances();
+  } catch (error) {
+    console.error('Erro na limpeza automática:', error);
+  }
+}, 120000);
+
+// Configuração do WebSocket
 io.on('connection', (socket) => {
   console.log('Cliente conectado:', socket.id);
   
   // Usuário se autentica
-  socket.on('authenticate', (userData) => {
+  socket.on('authenticate', async (userData) => {
     activeUsers.set(socket.id, {
       ...userData,
       socketId: socket.id,
       connectedAt: new Date()
     });
     
-    // Verificar se usuário já está em atendimento
-    const userInAttendance = Array.from(usersInAttendance.entries())
-      .find(([userId, data]) => userId === userData.id);
-    
-    if (userInAttendance) {
-      socket.emit('user_in_attendance', {
-        chamadoId: userInAttendance[1].chamadoId,
-        startTime: userInAttendance[1].startTime
-      });
+    try {
+      // Verificar se usuário já está em atendimento
+      const atendimentoAtivo = await AtendimentoAtivoModel.buscarPorColaborador(userData.id);
+      
+      if (atendimentoAtivo) {
+        socket.emit('user_in_attendance', {
+          chamadoId: atendimentoAtivo.atc_chamado,
+          userId: atendimentoAtivo.atc_colaborador,
+          userName: atendimentoAtivo.colaborador_nome,
+          startTime: atendimentoAtivo.atc_data_hora_inicio,
+          elapsedSeconds: atendimentoAtivo.tempo_decorrido || 0
+        });
+      }
+
+      // Enviar todos os atendimentos ativos para sincronizar
+      const atendimentos = await AtendimentoAtivoModel.listarAtivos();
+      socket.emit('active_attendances', atendimentos);
+      
+      // Enviar timers atuais
+      const timersData = atendimentos.map(atendimento => ({
+        chamadoId: atendimento.atc_chamado,
+        seconds: atendimento.tempo_decorrido || 0,
+        userId: atendimento.atc_colaborador,
+        userName: atendimento.colaborador_nome,
+        startedBy: atendimento.colaborador_nome,
+        startTime: atendimento.atc_data_hora_inicio
+      }));
+      
+      socket.emit('timers_sync', timersData);
+    } catch (error) {
+      console.error('Erro ao verificar atendimento ativo:', error);
     }
     
     socket.broadcast.emit('user_connected', userData);
   });
 
-  // Iniciar atendimento - NOVO
-  socket.on('start_attendance', (data) => {
+  // Iniciar atendimento
+  socket.on('start_attendance', async (data) => {
     const { chamadoId, userId, userName } = data;
     
-    // Verificar se usuário já está atendendo algo
-    if (usersInAttendance.has(userId)) {
-      socket.emit('attendance_blocked', { 
-        reason: 'Você já está atendendo outro chamado' 
-      });
-      return;
-    }
-    
-    // Verificar se chamado já está sendo atendido
-    const existingAttendance = Array.from(usersInAttendance.values())
-      .find(attendance => attendance.chamadoId === chamadoId);
-    
-    if (existingAttendance) {
-      socket.emit('attendance_blocked', { 
-        reason: 'Este chamado já está sendo atendido' 
-      });
-      return;
-    }
-    
-    // Registrar atendimento
-    const attendanceData = {
-      chamadoId,
-      userId,
-      userName,
-      socketId: socket.id,
-      startTime: new Date().toISOString()
-    };
-    
-    usersInAttendance.set(userId, attendanceData);
-    
-    socket.emit('attendance_started', attendanceData);
-    socket.broadcast.emit('user_started_attendance', attendanceData);
-  });
-
-  // Finalizar atendimento - NOVO
-  socket.on('finish_attendance', (data) => {
-    const { userId } = data;
-    
-    if (usersInAttendance.has(userId)) {
-      const attendanceData = usersInAttendance.get(userId);
-      usersInAttendance.delete(userId);
+    try {
+      await AtendimentoAtivoModel.iniciar(chamadoId, userId);
       
-      socket.emit('attendance_finished');
-      socket.broadcast.emit('user_finished_attendance', {
-        userId,
-        chamadoId: attendanceData.chamadoId
-      });
-    }
-  });
-
-  // Lock de chamado (mantém o existente, mas adapta)
-  socket.on('lock_chamado', (data) => {
-    const { chamadoId, userId, userName } = data;
-    
-    // Verificar se usuário está em atendimento
-    if (usersInAttendance.has(userId)) {
-      const currentAttendance = usersInAttendance.get(userId);
-      if (currentAttendance.chamadoId !== chamadoId) {
-        socket.emit('lock_failed', { 
-          chamadoId, 
-          reason: 'Você está atendendo outro chamado' 
-        });
-        return;
-      }
-    }
-    
-    if (!chamadoLocks.has(chamadoId)) {
-      chamadoLocks.set(chamadoId, {
+      const attendanceData = {
+        chamadoId,
         userId,
         userName,
         socketId: socket.id,
-        lockedAt: new Date()
-      });
+        startTime: new Date().toISOString()
+      };
       
-      socket.emit('lock_success', { chamadoId });
-      socket.broadcast.emit('chamado_locked', {
-        chamadoId,
-        lockedBy: { userId, userName }
-      });
-    } else {
-      const lockInfo = chamadoLocks.get(chamadoId);
-      socket.emit('lock_failed', { 
-        chamadoId, 
-        lockedBy: lockInfo 
+      socket.emit('attendance_started', attendanceData);
+      socket.broadcast.emit('user_started_attendance', attendanceData);
+      
+      // Broadcast atualização geral
+      await broadcastActiveAttendances();
+    } catch (error) {
+      socket.emit('attendance_blocked', { 
+        reason: (error as any)?.message || 'Não foi possível iniciar atendimento' 
       });
     }
   });
 
-  // Timer de atendimento com broadcast
-  socket.on('timer_update', (data) => {
-    const { chamadoId, seconds, userId } = data;
+  // Finalizar atendimento
+  socket.on('finish_attendance', async (data) => {
+    const { userId } = data;
     
-    // Broadcast para todos exceto o remetente
-    socket.broadcast.emit('timer_updated', {
-      chamadoId,
-      seconds,
-      userId,
-      timestamp: new Date().toISOString()
-    });
+    try {
+      // Buscar atendimento ativo do usuário
+      const atendimentoAtivo = await AtendimentoAtivoModel.buscarPorColaborador(userId);
+      
+      if (atendimentoAtivo) {
+        socket.emit('attendance_finished');
+        socket.broadcast.emit('user_finished_attendance', {
+          userId,
+          chamadoId: atendimentoAtivo.atc_chamado
+        });
+        
+        // Broadcast atualização geral
+        await broadcastActiveAttendances();
+      }
+    } catch (error) {
+      console.error('Erro ao finalizar atendimento via socket:', error);
+    }
+  });
+
+  // Cancelar atendimento
+  socket.on('cancel_attendance', async (data) => {
+    const { chamadoId, userId } = data;
+    
+    try {
+      await AtendimentoAtivoModel.cancelar(chamadoId);
+      
+      socket.emit('attendance_cancelled');
+      socket.broadcast.emit('user_cancelled_attendance', {
+        userId,
+        chamadoId
+      });
+      
+      // Broadcast atualização geral
+      await broadcastActiveAttendances();
+    } catch (error) {
+      console.error('Erro ao cancelar atendimento:', error);
+    }
+  });
+
+  // Solicitar atendimentos ativos
+  socket.on('get_active_attendances', async () => {
+    try {
+      const atendimentos = await AtendimentoAtivoModel.listarAtivos();
+      socket.emit('active_attendances', atendimentos);
+    } catch (error) {
+      console.error('Erro ao buscar atendimentos ativos:', error);
+    }
+  });
+
+  // Sincronizar timers (não usado mais - agora é automático)
+  socket.on('sync_timers', async () => {
+    try {
+      const atendimentos = await AtendimentoAtivoModel.listarAtivos();
+      const timersData = atendimentos.map(atendimento => ({
+        chamadoId: atendimento.atc_chamado,
+        seconds: atendimento.tempo_decorrido || 0,
+        userId: atendimento.atc_colaborador,
+        userName: atendimento.colaborador_nome,
+        startedBy: atendimento.colaborador_nome,
+        startTime: atendimento.atc_data_hora_inicio
+      }));
+      
+      socket.emit('timers_sync', timersData);
+    } catch (error) {
+      console.error('Erro ao sincronizar timers:', error);
+    }
   });
 
   // Desconexão
   socket.on('disconnect', () => {
     console.log('Cliente desconectado:', socket.id);
     
-    // Remover locks do usuário
-    for (const [chamadoId, lockInfo] of chamadoLocks.entries()) {
-      if (lockInfo.socketId === socket.id) {
-        chamadoLocks.delete(chamadoId);
-        socket.broadcast.emit('chamado_unlocked', { chamadoId });
-      }
-    }
-    
-    // Remover atendimento (mas manter dados para reconexão em 30 segundos)
     const user = activeUsers.get(socket.id);
     if (user) {
-      const userAttendance = usersInAttendance.get(user.id);
-      if (userAttendance) {
-        // Dar 30 segundos para reconexão
-        setTimeout(() => {
-          if (usersInAttendance.has(user.id)) {
-            usersInAttendance.delete(user.id);
-            io.emit('user_finished_attendance', {
-              userId: user.id,
-              chamadoId: userAttendance.chamadoId,
-              reason: 'Desconexão'
-            });
-          }
-        }, 30000);
-      }
-      
       activeUsers.delete(socket.id);
       socket.broadcast.emit('user_disconnected', user);
     }
+    
+    // Atendimentos permanecem no banco, não são removidos na desconexão
+  });
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({
+    success: true,
+    message: 'ProEngControl API está funcionando!',
+    timestamp: new Date().toISOString(),
+    version: '1.0.0',
+    environment: process.env.NODE_ENV
   });
 });
 
@@ -247,13 +296,6 @@ app.get(API_PREFIX, (req, res) => {
 app.use(`${API_PREFIX}/auth`, authRoutes);
 app.use(`${API_PREFIX}/dispositivos`, dispositivoRoutes);
 app.use(`${API_PREFIX}/chamados`, chamadoRoutes);
-
-// TODO: Aqui vamos adicionar as rotas quando criarmos
-// app.use(`${API_PREFIX}/auth`, authRoutes);
-// app.use(`${API_PREFIX}/dispositivos`, dispositivosRoutes);
-// app.use(`${API_PREFIX}/chamados`, chamadosRoutes);
-// app.use(`${API_PREFIX}/manutencao`, manutencaoRoutes);
-// app.use(`${API_PREFIX}/dashboard`, dashboardRoutes);
 
 // Middleware de tratamento de erros (deve ser o último)
 app.use(errorHandler);
@@ -282,6 +324,7 @@ const startServer = async () => {
     server.listen(PORT, () => {
       console.log('🚀 ProEngControl - PEC API');
       console.log(`📡 Servidor rodando na porta ${PORT}`);
+      console.log(`🔌 WebSocket ativo`);
       console.log(`🌍 Environment: ${process.env.NODE_ENV}`);
       console.log(`📋 API Base: http://localhost:${PORT}${API_PREFIX}`);
       console.log(`🔍 Health Check: http://localhost:${PORT}/health`);

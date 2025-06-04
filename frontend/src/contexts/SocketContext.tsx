@@ -19,6 +19,7 @@ interface SocketContextType {
   updateTimer: (chamadoId: number, seconds: number) => void;
   startAttendance: (chamadoId: number) => Promise<AttendanceData | null>;
   finishAttendance: () => void;
+  cancelAttendance: (chamadoId: number) => void;
   isUserInAttendance: boolean;
   currentAttendance: AttendanceData | null;
 }
@@ -39,7 +40,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
 
   // Conectar ao WebSocket
   useEffect(() => {
-    if (state.isAuthenticated && state.user) {
+    if (state.isAuthenticated && state.user && socketRef.current) {
       // Conectar ao WebSocket
       socketRef.current = io(import.meta.env.VITE_API_URL?.replace('/api/v1', '') || 'http://localhost:3001');
       
@@ -72,12 +73,33 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
         alert(data.reason);
       });
 
+      socket.on('timers_sync', (timersData: { chamadoId: number; seconds: number }[]) => {
+        // Processar dados dos timers vindos do servidor
+        timersData.forEach(timerData => {
+          // Emitir evento interno para atualizar timers
+          socket.emit('internal_timer_update', timerData);
+        });
+      });
+
+      socket.on('active_attendances_updated', (atendimentos: AttendanceData[]) => {
+        // Atualizar lista de atendimentos ativos
+        console.log('Atendimentos atualizados:', atendimentos);
+      });
+
+      socket.on('user_cancelled_attendance', (data) => {
+        // Alguém cancelou atendimento
+        console.log('Atendimento cancelado:', data);
+      });
+
       // Cleanup na desconexão
       return () => {
         socket.off('user_in_attendance');
         socket.off('attendance_started');
         socket.off('attendance_finished');
         socket.off('attendance_blocked');
+        socket.off('timers_sync');
+        socket.off('active_attendances_updated');
+        socket.off('user_cancelled_attendance');
         socket.disconnect();
         socketRef.current = null;
       };
@@ -179,6 +201,15 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     });
   };
 
+  const cancelAttendance = (chamadoId: number) => {
+    if (socketRef.current && state.user) {
+      socketRef.current.emit('cancel_attendance', {
+        chamadoId,
+        userId: state.user.id
+      });
+    }
+  };
+
   const finishAttendance = () => {
     if (socketRef.current && state.user) {
       socketRef.current.emit('finish_attendance', {
@@ -198,6 +229,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     finishAttendance,
     isUserInAttendance,
     currentAttendance,
+    cancelAttendance
   };
 
   return (

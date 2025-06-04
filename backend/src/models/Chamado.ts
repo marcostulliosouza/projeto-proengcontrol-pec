@@ -192,53 +192,53 @@ export class ChamadoModel {
     }
   }
 
-  // Iniciar atendimento do chamado
-  static async iniciarAtendimento(id: number, colaboradorId: number): Promise<boolean> {
-    try {
-      // Atualizar status e data de atendimento
-      const updateQuery = `
-        UPDATE chamados SET 
-          cha_status = 2,
-          cha_data_hora_atendimento = NOW()
-        WHERE cha_id = ?
-      `;
+  // // Iniciar atendimento do chamado
+  // static async iniciarAtendimento(id: number, colaboradorId: number): Promise<boolean> {
+  //   try {
+  //     // Atualizar status e data de atendimento
+  //     const updateQuery = `
+  //       UPDATE chamados SET 
+  //         cha_status = 2,
+  //         cha_data_hora_atendimento = NOW()
+  //       WHERE cha_id = ?
+  //     `;
 
-      // Registrar atendimento
-      const atendimentoQuery = `
-        INSERT INTO atendimentos_chamados (atc_chamado, atc_colaborador, atc_data_hora_inicio)
-        VALUES (?, ?, NOW())
-      `;
+  //     // Registrar atendimento
+  //     const atendimentoQuery = `
+  //       INSERT INTO atendimentos_chamados (atc_chamado, atc_colaborador, atc_data_hora_inicio)
+  //       VALUES (?, ?, NOW())
+  //     `;
 
-      await Promise.all([
-        executeQuery(updateQuery, [id]),
-        executeQuery(atendimentoQuery, [id, colaboradorId])
-      ]);
+  //     await Promise.all([
+  //       executeQuery(updateQuery, [id]),
+  //       executeQuery(atendimentoQuery, [id, colaboradorId])
+  //     ]);
 
-      return true;
-    } catch (error) {
-      console.error('Erro ao iniciar atendimento:', error);
-      throw error;
-    }
-  }
+  //     return true;
+  //   } catch (error) {
+  //     console.error('Erro ao iniciar atendimento:', error);
+  //     throw error;
+  //   }
+  // }
 
   // Finalizar chamado
-  static async finalizar(id: number, acaoId: number): Promise<boolean> {
-    try {
-      const query = `
-        UPDATE chamados SET
-          cha_status = 3,
-          cha_data_hora_termino = NOW(),
-          cha_acao = ?
-        WHERE cha_id = ?
-      `;
+  // static async finalizar(id: number, acaoId: number): Promise<boolean> {
+  //   try {
+  //     const query = `
+  //       UPDATE chamados SET
+  //         cha_status = 3,
+  //         cha_data_hora_termino = NOW(),
+  //         cha_acao = ?
+  //       WHERE cha_id = ?
+  //     `;
 
-      const result = await executeQuery(query, [acaoId, id]);
-      return result.affectedRows > 0;
-    } catch (error) {
-      console.error('Erro ao finalizar chamado:', error);
-      throw error;
-    }
-  }
+  //     const result = await executeQuery(query, [acaoId, id]);
+  //     return result.affectedRows > 0;
+  //   } catch (error) {
+  //     console.error('Erro ao finalizar chamado:', error);
+  //     throw error;
+  //   }
+  // }
 
   // Buscar tipos de chamado
   static async getTipos() {

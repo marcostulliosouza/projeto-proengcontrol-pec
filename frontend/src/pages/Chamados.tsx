@@ -275,88 +275,208 @@ const Chamados: React.FC = () => {
     return null;
   };
 
+  const formatTimeAgo = (dateString: string) => {
+    const now = new Date().getTime();
+    const date = new Date(dateString).getTime();
+    const diffInSeconds = Math.floor((now - date) / 1000);
+    
+    const hours = Math.floor(diffInSeconds / 3600);
+    const minutes = Math.floor((diffInSeconds % 3600) / 60);
+    
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    }
+    return `${minutes}m`;
+  };
+
+const getTimeAgoColor = (dateString: string) => {
+    const now = new Date().getTime();
+    const date = new Date(dateString).getTime();
+    const diffInMinutes = Math.floor((now - date) / 60000);
+    
+    if (diffInMinutes > 30) return 'text-red-600 font-bold animate-pulse';
+    if (diffInMinutes > 15) return 'text-yellow-600 font-medium';
+    return 'text-green-600';
+  };
+
   const columns = [
-    {
-      key: 'cha_id',
-      label: 'ID',
-      sortable: true,
-      className: 'w-20',
-    },
-    {
-      key: 'cha_DT',
-      label: 'DT',
-      className: 'w-24',
-    },
-    {
-      key: 'tipo_chamado',
-      label: 'Tipo',
-      className: 'w-32',
-    },
-    {
-      key: 'cliente_nome',
-      label: 'Cliente',
-      className: 'w-40',
-    },
-    {
-      key: 'cha_descricao',
-      label: 'Descrição',
-      render: (value: unknown, item: Chamado) => {
-        const attendingUser = isUserAttending(item.cha_id);
-        const timer = getTimer(item.cha_id);
-        
-        return (
-          <div className="max-w-xs">
-            <div className="truncate" title={String(value)}>
-              {String(value)}
+  {
+    key: 'cha_id',
+    label: 'ID',
+    sortable: true,
+    className: 'w-16',
+    render: (value: unknown) => (
+      <span className="font-mono text-sm font-medium">
+        #{String(value)}
+      </span>
+    )
+  },
+  {
+    key: 'prioridade',
+    label: '🚨',
+    className: 'w-12',
+    render: (_: unknown, item: Chamado) => {
+      const now = new Date().getTime();
+      const openTime = new Date(item.cha_data_hora_abertura).getTime();
+      const diffInMinutes = Math.floor((now - openTime) / 60000);
+      
+      if (diffInMinutes > 30) {
+        return <span className="text-red-500 text-xl animate-bounce">🔥</span>;
+      }
+      if (diffInMinutes > 15) {
+        return <span className="text-yellow-500 text-lg">⚠️</span>;
+      }
+      return <span className="text-green-500">✅</span>;
+    }
+  },
+  {
+    key: 'cha_DT',
+    label: 'DT',
+    className: 'w-20',
+    render: (value: unknown) => (
+      <span className="font-mono text-xs bg-gray-100 px-1 rounded">
+        {String(value) || 'N/A'}
+      </span>
+    )
+  },
+  {
+    key: 'status_info',
+    label: 'Status & Tempo',
+    className: 'w-40',
+    render: (_: unknown, item: Chamado) => {
+      const timer = getTimer(item.cha_id);
+      const statusMap = {
+        1: { label: 'Aberto', class: 'bg-yellow-100 text-yellow-800' },
+        2: { label: 'Em Andamento', class: 'bg-blue-100 text-blue-800' },
+        3: { label: 'Fechado', class: 'bg-green-100 text-green-800' },
+      };
+      
+      const statusInfo = statusMap[item.cha_status as keyof typeof statusMap] || { 
+        label: 'Desconhecido', 
+        class: 'bg-gray-100 text-gray-800' 
+      };
+      
+      return (
+        <div className="space-y-1">
+          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${statusInfo.class}`}>
+            {statusInfo.label}
+          </span>
+          
+          {/* Tempo em atendimento */}
+          {timer && (
+            <div className="text-xs">
+              <span className="text-blue-600 font-mono bg-blue-50 px-1 rounded">
+                ⏱️ {formatTimer(timer.seconds)}
+              </span>
             </div>
-            {attendingUser && (
-              <div className="text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded mt-1 flex items-center">
-                <span className="w-2 h-2 bg-orange-500 rounded-full mr-1 animate-pulse"></span>
-                <span>{attendingUser} - {timer ? formatTimer(timer.seconds) : '00:00'}</span>
-              </div>
-            )}
+          )}
+          
+          {/* Tempo desde abertura */}
+          {item.cha_status === 1 && (
+            <div className="text-xs">
+              <span className={getTimeAgoColor(item.cha_data_hora_abertura)}>
+                🕐 {formatTimeAgo(item.cha_data_hora_abertura)}
+              </span>
+            </div>
+          )}
+        </div>
+      );
+    }
+  },
+  {
+    key: 'cliente_info',
+    label: 'Cliente & Tipo',
+    className: 'w-48',
+    render: (_: unknown, item: Chamado) => (
+      <div className="space-y-1">
+        <div className="font-medium text-sm text-gray-900 truncate" title={item.cliente_nome}>
+          {item.cliente_nome}
+        </div>
+        <div className="text-xs text-gray-500 truncate" title={item.tipo_chamado}>
+          📋 {item.tipo_chamado}
+        </div>
+      </div>
+    )
+  },
+  {
+    key: 'cha_descricao',
+    label: 'Descrição & Atendimento',
+    render: (value: unknown, item: Chamado) => {
+      const attendingUser = isUserAttending(item.cha_id);
+      const timer = getTimer(item.cha_id);
+      
+      return (
+        <div className="max-w-xs space-y-2">
+          <div className="text-sm text-gray-900 line-clamp-2" title={String(value)}>
+            {String(value)}
           </div>
-        );
-      },
+          
+          {attendingUser && (
+            <div className="bg-orange-50 border border-orange-200 px-2 py-1 rounded text-xs">
+              <div className="flex items-center space-x-1">
+                <span className="w-2 h-2 bg-orange-500 rounded-full animate-pulse"></span>
+                <span className="font-medium text-orange-800">
+                  {attendingUser}
+                </span>
+              </div>
+              {timer && (
+                <div className="text-orange-700 font-mono mt-1">
+                  {formatTimer(timer.seconds)}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      );
     },
-    {
-      key: 'cha_status',
-      label: 'Status',
-      render: (value: unknown, item: Chamado) => getStatusBadge(Number(value), item.cha_id),
-      className: 'w-32',
+  },
+  {
+    key: 'cha_data_hora_abertura',
+    label: 'Abertura',
+    render: (value: unknown) => {
+      const date = new Date(String(value));
+      return (
+        <div className="text-xs space-y-1">
+          <div className="font-medium">
+            {date.toLocaleDateString('pt-BR')}
+          </div>
+          <div className="text-gray-500 font-mono">
+            {date.toLocaleTimeString('pt-BR', { 
+              hour: '2-digit', 
+              minute: '2-digit' 
+            })}
+          </div>
+        </div>
+      );
     },
-    {
-      key: 'cha_data_hora_abertura',
-      label: 'Abertura',
-      render: (value: unknown) => formatDate(String(value)),
-      className: 'w-36',
-    },
-    {
-      key: 'actions',
-      label: 'Ações',
-      render: (_: unknown, item: Chamado) => {
-        const timer = getTimer(item.cha_id);
-        const isBeingAttended = !!timer;
-        const userIsBusy = isUserInAttendance && currentAttendance?.chamadoId !== item.cha_id;
-        const lockInfo = isLocked(item.cha_id);
-        const isBeingViewed = lockInfo && !isBeingAttended; // Lock sem timer = visualização
-        
-        return (
-          <div className="flex space-x-2">
+    className: 'w-24',
+  },
+  {
+    key: 'actions',
+    label: 'Ações',
+    render: (_: unknown, item: Chamado) => {
+      const timer = getTimer(item.cha_id);
+      const isBeingAttended = !!timer;
+      const userIsBusy = isUserInAttendance && currentAttendance?.chamadoId !== item.cha_id;
+      const lockInfo = isLocked(item.cha_id);
+      const isBeingViewed = lockInfo && !isBeingAttended;
+      
+      return (
+        <div className="flex flex-col space-y-1">
+          <div className="flex space-x-1">
             <Button
               size="sm"
               variant="secondary"
               onClick={() => handleViewChamado(item)}
-              disabled={isBeingViewed} // Só bloqueia se sendo visualizado
+              disabled={isBeingViewed}
               title={
                 isBeingViewed
                   ? `Sendo visualizado por ${lockInfo?.lockedBy.userName}`
-                  : isBeingAttended
-                  ? `Sendo atendido - clique para ver detalhes`
                   : 'Visualizar chamado'
               }
+              className="!px-2 !py-1 !text-xs"
             >
-              Ver
+              👁️
             </Button>
             <Button
               size="sm"
@@ -368,35 +488,37 @@ const Chamados: React.FC = () => {
                   ? 'Chamado está sendo atendido'
                   : userIsBusy 
                   ? `Você está atendendo chamado #${currentAttendance?.chamadoId}`
-                  : isBeingViewed
-                  ? `Sendo visualizado por ${lockInfo?.lockedBy.userName}`
                   : 'Editar chamado'
               }
+              className="!px-2 !py-1 !text-xs"
             >
-              Editar
+              ✏️
             </Button>
-            {item.cha_status === 1 && (
-              <Button
-                size="sm"
-                variant="success"
-                onClick={() => handleIniciarAtendimento(item)}
-                disabled={isBeingAttended || userIsBusy}
-                title={
-                  isBeingAttended
-                    ? 'Chamado já está sendo atendido'
-                    : userIsBusy 
-                    ? `Você está atendendo chamado #${currentAttendance?.chamadoId}`
-                    : 'Iniciar atendimento'
-                }
-              >
-                {isBeingAttended ? '⏱️' : userIsBusy ? '🚫' : 'Atender'}
-              </Button>
-            )}
           </div>
-        );
-      },
-      className: 'w-52',
+          
+          {item.cha_status === 1 && (
+            <Button
+              size="sm"
+              variant={isBeingAttended ? "secondary" : "success"}
+              onClick={() => handleIniciarAtendimento(item)}
+              disabled={isBeingAttended || userIsBusy}
+              title={
+                isBeingAttended
+                  ? 'Chamado já está sendo atendido'
+                  : userIsBusy 
+                  ? `Você está atendendo chamado #${currentAttendance?.chamadoId}`
+                  : 'Iniciar atendimento'
+              }
+              className="!px-2 !py-1 !text-xs w-full"
+            >
+              {isBeingAttended ? '🔒 Ocupado' : userIsBusy ? '🚫 Ocupado' : '🚀 Atender'}
+            </Button>
+          )}
+        </div>
+      );
     },
+    className: 'w-32',
+  }
 ];
 
   return (

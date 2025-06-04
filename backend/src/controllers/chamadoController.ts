@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { ChamadoModel } from '../models/Chamado';
-import { ApiResponse, AuthRequest, PaginationParams, FilterParams } from '@/types';
+import { AtendimentoAtivoModel } from '../models/AtendimentoAtivo';
+import { ApiResponse, AuthRequest, PaginationParams, FilterParams } from '../types';
 import { asyncHandler } from '../middlewares/errorHandler';
 
 export const getChamados = asyncHandler(async (req: Request, res: Response) => {
@@ -168,22 +169,22 @@ export const iniciarAtendimento = asyncHandler(async (req: AuthRequest, res: Res
     return;
   }
 
-  const sucesso = await ChamadoModel.iniciarAtendimento(id, colaboradorId);
+  try {
+    // USAR NOVO MODELO
+    await AtendimentoAtivoModel.iniciar(id, colaboradorId);
 
-  if (!sucesso) {
-    res.status(404).json({
-      success: false,
-      message: 'Chamado não encontrado',
+    res.json({
+      success: true,
+      message: 'Atendimento iniciado com sucesso',
       timestamp: new Date().toISOString()
     } as ApiResponse);
-    return;
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      message: (error instanceof Error ? error.message : 'Erro ao iniciar atendimento'),
+      timestamp: new Date().toISOString()
+    } as ApiResponse);
   }
-
-  res.json({
-    success: true,
-    message: 'Atendimento iniciado com sucesso',
-    timestamp: new Date().toISOString()
-  } as ApiResponse);
 });
 
 export const finalizarChamado = asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -199,22 +200,51 @@ export const finalizarChamado = asyncHandler(async (req: AuthRequest, res: Respo
     return;
   }
 
-  const sucesso = await ChamadoModel.finalizar(id, acao_id);
+  try {
+    // USAR NOVO MODELO
+    await AtendimentoAtivoModel.finalizar(id, acao_id);
 
-  if (!sucesso) {
-    res.status(404).json({
+    res.json({
+      success: true,
+      message: 'Chamado finalizado com sucesso',
+      timestamp: new Date().toISOString()
+    } as ApiResponse);
+  } catch (error) {
+    res.status(400).json({
       success: false,
-      message: 'Chamado não encontrado',
+      message: 'Erro ao finalizar chamado',
+      timestamp: new Date().toISOString()
+    } as ApiResponse);
+  }
+});
+
+export const cancelarAtendimento = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const id = parseInt(req.params.id);
+  
+  if (isNaN(id)) {
+    res.status(400).json({
+      success: false,
+      message: 'ID inválido',
       timestamp: new Date().toISOString()
     } as ApiResponse);
     return;
   }
 
-  res.json({
-    success: true,
-    message: 'Chamado finalizado com sucesso',
-    timestamp: new Date().toISOString()
-  } as ApiResponse);
+  try {
+    await AtendimentoAtivoModel.cancelar(id);
+
+    res.json({
+      success: true,
+      message: 'Atendimento cancelado com sucesso',
+      timestamp: new Date().toISOString()
+    } as ApiResponse);
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      message: 'Erro ao cancelar atendimento',
+      timestamp: new Date().toISOString()
+    } as ApiResponse);
+  }
 });
 
 // Endpoints auxiliares

@@ -20,10 +20,9 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
   const [selectedAcao, setSelectedAcao] = useState<number | ''>('');
   const [observacoes, setObservacoes] = useState('');
   const [timer, setTimer] = useState(0);
-  const [isTimerRunning, setIsTimerRunning] = useState(false);
-  const [startTime, setStartTime] = useState<Date | null>(null);
-  
-  const { startTimer, updateTimer } = useSocket();
+  // Removed unused state isTimerRunning
+  const [startTime, setStartTime] = useState<Date | null>(null);  
+  const { updateTimer, finishAttendance } = useSocket();
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Carregar ações disponíveis
@@ -40,49 +39,56 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
     loadAcoes();
   }, []);
 
-  // Iniciar timer automaticamente
+  // Buscar tempo atual do atendimento e iniciar timer
   useEffect(() => {
-    handleStartTimer();
+    const initializeTimer = async () => {
+      try {
+        // Buscar tempo atual do banco de dados
+        const response = await fetch(`/api/v1/chamados/atendimentos-ativos`);
+        const data = await response.json();
+        
+        if (data.success) {
+          const atendimentoAtual = data.data.find(
+            (atendimento: { atc_chamado: number }) => atendimento.atc_chamado === chamado.cha_id
+          );
+          
+          if (atendimentoAtual) {
+            const tempoDecorrido = atendimentoAtual.tempo_decorrido || 0;
+            setTimer(tempoDecorrido);
+            setStartTime(new Date(atendimentoAtual.atc_data_hora_inicio));
+            
+            // Iniciar contagem a partir do tempo já decorrido
+            intervalRef.current = setInterval(() => {
+              setTimer(prev => {
+                const newTime = prev + 1;
+                updateTimer(chamado.cha_id, newTime);
+                return newTime;
+              });
+            }, 1000);
+          }
+        }
+      } catch (error) {
+        console.error('Erro ao buscar tempo do atendimento:', error);
+        // Se der erro, iniciar do zero
+        setStartTime(new Date());
+        intervalRef.current = setInterval(() => {
+          setTimer(prev => {
+            const newTime = prev + 1;
+            updateTimer(chamado.cha_id, newTime);
+            return newTime;
+          });
+        }, 1000);
+      }
+    };
+
+    initializeTimer();
+
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
       }
     };
-  }, []);
-
-  const handleStartTimer = async () => {
-    if (!isTimerRunning) {
-      setIsTimerRunning(true);
-      setStartTime(new Date());
-      
-      // Emitir para outros usuários que o timer foi iniciado
-      startTimer(chamado.cha_id);
-      
-      // Iniciar atendimento no backend
-      try {
-        await ChamadoService.iniciarAtendimento(chamado.cha_id);
-      } catch (error) {
-        console.error('Erro ao iniciar atendimento:', error);
-      }
-
-      // Iniciar contagem do timer
-      intervalRef.current = setInterval(() => {
-        setTimer(prev => {
-          const newTime = prev + 1;
-          updateTimer(chamado.cha_id, newTime);
-          return newTime;
-        });
-      }, 1000);
-    }
-  };
-
-  const handleStopTimer = () => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-    setIsTimerRunning(false);
-  };
+  }, [chamado.cha_id, updateTimer]);
 
   const formatTimer = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
@@ -101,12 +107,24 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
       return;
     }
 
+    const confirmMessage = `Tem certeza que deseja finalizar este atendimento?\n\nTempo total: ${formatTimer(timer)}\nAção: ${acoes.find(a => a.ach_id === selectedAcao)?.ach_descricao}`;
+    
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
     try {
       setLoading(true);
-      handleStopTimer();
+      
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
 
       // Finalizar chamado no backend
       await ChamadoService.finalizarChamado(chamado.cha_id, Number(selectedAcao));
+
+      // Finalizar atendimento no WebSocket
+      finishAttendance();
 
       // Buscar chamado atualizado
       const updatedChamado = await ChamadoService.getChamado(chamado.cha_id);
@@ -119,9 +137,44 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
     }
   };
 
-  const handleCancel = () => {
-    handleStopTimer();
-    onCancel();
+  const handleCancelar = async () => {
+    const confirmMessage = `⚠️ ATENÇÃO: Você está cancelando um atendimento ativo!\n\nTempo investido: ${formatTimer(timer)}\nO chamado voltará para status "Aberto"\n\nTem certeza que deseja cancelar?`;
+    
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+
+      // Cancelar atendimento no backend
+      await fetch(`/api/v1/chamados/${chamado.cha_id}/cancelar`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      // Finalizar atendimento no WebSocket
+      finishAttendance();
+
+      onCancel();
+    } catch (error) {
+      console.error('Erro ao cancelar atendimento:', error);
+      alert('Erro ao cancelar atendimento. Tente novamente.');
+      setLoading(false);
+    }
+  };
+
+  const getTimerColor = () => {
+    if (timer > 1800) return 'text-red-600'; // > 30 min
+    if (timer > 900) return 'text-yellow-600'; // > 15 min
+    return 'text-green-600';
   };
 
   return (
@@ -132,20 +185,23 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
           <div>
             <h3 className="text-lg font-semibold">Atendimento em Andamento</h3>
             <p className="text-blue-100">Chamado #{chamado.cha_id} - {chamado.cliente_nome}</p>
+            {timer > 1800 && (
+              <p className="text-red-200 font-medium mt-1">⚠️ ATENÇÃO: Atendimento ultrapassou 30 minutos!</p>
+            )}
           </div>
           <div className="text-right">
-            <div className="text-3xl font-mono font-bold">
+            <div className={`text-3xl font-mono font-bold ${getTimerColor()}`}>
               {formatTimer(timer)}
             </div>
             <p className="text-blue-100 text-sm">
-              {isTimerRunning ? 'Em andamento' : 'Pausado'}
+              Em andamento
             </p>
           </div>
         </div>
         
         {/* Timer Controls */}
         <div className="flex items-center space-x-3 mt-4">
-          <div className={`w-3 h-3 rounded-full ${isTimerRunning ? 'bg-green-400 animate-pulse' : 'bg-gray-400'}`}></div>
+          <div className="w-3 h-3 rounded-full bg-green-400 animate-pulse"></div>
           <span className="text-sm">
             {startTime && `Iniciado às ${startTime.toLocaleTimeString('pt-BR')}`}
           </span>
@@ -219,7 +275,7 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
           <div>
             <span className="text-green-700">Status:</span>
             <div className="font-semibold text-green-900">
-              {isTimerRunning ? 'Em Andamento' : 'Pausado'}
+              {timer > 0 ? 'Em Andamento' : 'Pausado'}
             </div>
           </div>
           <div>
@@ -234,8 +290,8 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
       {/* Botões de Ação */}
       <div className="flex justify-end space-x-3 pt-4 border-t border-secondary-200">
         <Button
-          variant="secondary"
-          onClick={handleCancel}
+          variant="danger"
+          onClick={handleCancelar}
           disabled={loading}
         >
           Cancelar Atendimento
@@ -251,10 +307,10 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
         </Button>
       </div>
 
-      {/* Warning sobre fechamento */}
-      <div className="bg-yellow-50 border border-yellow-200 p-3 rounded text-sm text-yellow-800">
-        <strong>⚠️ Atenção:</strong> Ao finalizar o chamado, o timer será interrompido e o chamado será marcado como concluído. 
-        Esta ação não pode ser desfeita.
+      {/* Warning atualizado */}
+      <div className="bg-red-50 border border-red-200 p-3 rounded text-sm text-red-800">
+        <strong>⚠️ Modal Bloqueado:</strong> Este modal não pode ser fechado durante o atendimento. 
+        Use "Cancelar Atendimento" para sair ou "Finalizar Chamado" para concluir.
       </div>
     </div>
   );
