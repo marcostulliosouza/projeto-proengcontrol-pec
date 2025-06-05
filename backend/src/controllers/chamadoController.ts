@@ -284,40 +284,54 @@ export const getDetratoresByTipo = asyncHandler(async (req: Request, res: Respon
       timestamp: new Date().toISOString()
     } as ApiResponse);
     return;
-}
+  }
 
-try {
-  // Lógica igual ao Python: busca detratores do tipo OU sem tipo (dtr_tipo IS NULL)
-  const query = `
-    SELECT 
-      d.dtr_id,
-      d.dtr_descricao,
-      d.dtr_tipo,
-      tc.tch_descricao,
-      d.dtr_indicador
-    FROM detratores d
-    LEFT JOIN tipos_chamado tc ON d.dtr_tipo = tc.tch_id
-    WHERE d.dtr_ativo = 1 
-    AND (d.dtr_tipo IS NULL OR d.dtr_tipo = ?)
-    ORDER BY d.dtr_descricao ASC
-  `;
-  
-  const detratores = await executeQuery(query, [tipoId]);
-  
-  res.json({
-    success: true,
-    message: 'Detratores obtidos com sucesso',
-    data: detratores,
-    timestamp: new Date().toISOString()
-  } as ApiResponse);
-} catch (error) {
-  console.error('Erro ao buscar detratores:', error);
-  res.status(500).json({
-    success: false,
-    message: 'Erro ao buscar detratores',
-    timestamp: new Date().toISOString()
-  } as ApiResponse);
-}
+  try {
+    console.log(`🔍 Buscando detratores para tipo ${tipoId}...`);
+    
+    // Query corrigida: busca detratores ativos (independente do indicador)
+    const query = `
+      SELECT 
+        d.dtr_id,
+        d.dtr_descricao,
+        d.dtr_tipo,
+        tc.tch_descricao,
+        d.dtr_indicador,
+        d.dtr_ativo
+      FROM detratores d
+      LEFT JOIN tipos_chamado tc ON d.dtr_tipo = tc.tch_id
+      WHERE d.dtr_ativo = 1 
+      AND (d.dtr_tipo IS NULL OR d.dtr_tipo = ?)
+      ORDER BY 
+        d.dtr_indicador DESC,  -- Críticos (1) primeiro
+        d.dtr_descricao ASC
+    `;
+    
+    const detratores = await executeQuery(query, [tipoId]);
+    
+    console.log(`✅ Encontrados ${detratores.length} detratores:`, 
+      detratores.map((d: any) => ({
+        id: d.dtr_id,
+        descricao: d.dtr_descricao,
+        indicador: d.dtr_indicador,
+        tipo: d.dtr_tipo
+      }))
+    );
+    
+    res.json({
+      success: true,
+      message: 'Detratores obtidos com sucesso',
+      data: detratores,
+      timestamp: new Date().toISOString()
+    } as ApiResponse);
+  } catch (error) {
+    console.error('Erro ao buscar detratores:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao buscar detratores',
+      timestamp: new Date().toISOString()
+    } as ApiResponse);
+  }
 });
 
 // Buscar ações por detrator (baseado na estrutura do banco)

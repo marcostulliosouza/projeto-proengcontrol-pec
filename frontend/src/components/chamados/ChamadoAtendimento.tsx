@@ -327,7 +327,7 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
           {/* Campo de Ação Realizada */}
           <div>
             <div className="flex justify-between items-center mb-1">
-              <label className="form-label">Ação Realizada *</label>
+              <label className="form-label">Ação Realizada</label>
               <span className={`text-sm font-bold ${caracteresRestantes < 0 ? 'text-red-600' : caracteresRestantes < 50 ? 'text-yellow-600' : 'text-gray-500'}`}>
                 {caracteresRestantes} restantes
               </span>

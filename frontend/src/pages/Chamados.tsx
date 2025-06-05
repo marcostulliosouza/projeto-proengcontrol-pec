@@ -147,7 +147,6 @@ const Chamados: React.FC = () => {
       setDetailModalOpen(true);
     }
   };
-
   // Função melhorada com debounce e feedback imediato
   const handleIniciarAtendimento = async (chamado: Chamado) => {
     // Verificar se já está processando este chamado
@@ -496,9 +495,6 @@ const Chamados: React.FC = () => {
                 <span className="text-sm font-medium block truncate text-green-700">
                   {colaboradorNome}
                 </span>
-                <div className="text-xs text-green-600">
-                  ✅ Finalizado
-                </div>
               </div>
             </div>
           );
