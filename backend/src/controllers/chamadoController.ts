@@ -423,6 +423,17 @@ export const finalizarChamado = asyncHandler(async (req: AuthRequest, res: Respo
     await AtendimentoAtivoModel.finalizarComDetrator(id, detrator_id, descricao);
 
     console.log('✅ Chamado finalizado com sucesso');
+
+    // NOVO: Emitir evento via WebSocket para todos os usuários
+    const io = req.app.get('io');
+    if (io) {
+      console.log(`📡 Emitindo evento de finalização para chamado ${id}`);
+      io.emit('user_finished_attendance', {
+        chamadoId: id,
+        userId: req.user?.id
+      });
+    }
+
     res.json({
       success: true,
       message: 'Chamado finalizado com sucesso',

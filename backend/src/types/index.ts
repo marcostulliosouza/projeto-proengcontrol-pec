@@ -72,6 +72,7 @@ export interface Chamado {
   local_chamado?: string;
   colaborador_nome?: string;
   acao_descricao?: string;
+  atc_colaborador?: number;
   // Campos calculados
   duracao_total?: number;
   duracao_atendimento?: number;

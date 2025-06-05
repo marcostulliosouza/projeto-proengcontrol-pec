@@ -102,6 +102,8 @@ export interface Chamado extends Record<string, unknown> {
   status_chamado?: string;
   cliente_nome?: string;
   produto_nome?: string;
+  colaborador_nome?: string;
+  acao_descricao?: string;
 }
 
 // Tipos para componentes

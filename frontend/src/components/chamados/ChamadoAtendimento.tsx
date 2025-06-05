@@ -25,7 +25,7 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
   const [realStartTime, setRealStartTime] = useState<Date | null>(null);
   const [shouldClose, setShouldClose] = useState(false);
 
-  const { socket, cancelAttendance, currentAttendance } = useSocket();
+  const { socket, cancelAttendance, currentAttendance, finishAttendance } = useSocket();
 
   // Contador de caracteres (máximo 250 como no Python)
   const caracteresRestantes = 250 - descricaoAtendimento.length;
@@ -185,23 +185,26 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
       setLoading(true);
       console.log(`🏁 Finalizando chamado ${chamado.cha_id} com detrator ${selectedDetrator}`);
       
+      // Notificar o socket Antes de finalizar via API
+      finishAttendance();
+
       // Finalizar usando detrator
       await ChamadoService.finalizarChamado(chamado.cha_id, selectedDetrator, descricaoAtendimento.trim());
       
+      console.log(`✅ Chamado finalizado com sucesso via API`);
+
+      // fechar modal de confirmação
+      setShowFinalizarModal(false);
+
       // Buscar chamado atualizado
       const updatedChamado = await ChamadoService.getChamado(chamado.cha_id);
-      
-      console.log('✅ Chamado finalizado com sucesso via API');
-      
-      // Fechar modal de confirmação
-      setShowFinalizarModal(false);
-      
+            
       // Notificar componente pai
       onFinish(updatedChamado);
       
       // FORÇAR fechamento do modal principal
       console.log('🔄 Forçando fechamento do modal principal');
-      setShouldClose(true);
+      onCancel();
       
     } catch (error) {
       console.error('Erro ao finalizar chamado:', error);

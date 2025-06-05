@@ -203,12 +203,14 @@ io.on('connection', (socket) => {
       if (atendimentoAtivo) {
         console.log(`🏁 Socket: Finalizando atendimento do chamado ${atendimentoAtivo.atc_chamado}`);
         
-        // Emitir ANTES de finalizar
-        socket.emit('attendance_finished');
-        socket.broadcast.emit('user_finished_attendance', {
+        // Emitir ANTES de finalizar para todos os usuários
+        io.emit('user_finished_attendance', {
           userId,
           chamadoId: atendimentoAtivo.atc_chamado
         });
+
+        // Emitir ANTES de finalizar
+        socket.emit('attendance_finished');
         
         await broadcastActiveAttendances();
       }

@@ -34,6 +34,12 @@ interface UserFinishedData {
   userId?: number;
 }
 
+declare global {
+  interface Window {
+    clearActionLoading?: (chamadoId: number) => void; // NOVO: Função para limpar loading
+  }
+}
+
 export const useChamadosRealTime = (initialChamados: Chamado[]) => {
   const [chamados, setChamados] = useState<Chamado[]>(initialChamados);
   const [timers, setTimers] = useState<Timer[]>([]);
@@ -119,6 +125,8 @@ export const useChamadosRealTime = (initialChamados: Chamado[]) => {
 
     const handleUserStarted = (data: UserAttendanceData) => {
       console.log('🚀 Usuário iniciou:', data.chamadoId);
+
+      // Adiconar timer
       setTimers(prev => {
         const filtered = prev.filter(timer => timer.chamadoId !== data.chamadoId);
         return [...filtered, {
@@ -131,24 +139,77 @@ export const useChamadosRealTime = (initialChamados: Chamado[]) => {
           realStartTime: new Date(data.startTime)
         }];
       });
-    };
+
+      // Atualizar status do chamado para em andamento
+      setChamados(prev => prev.map(chamado => 
+        chamado.cha_id === data.chamadoId 
+          ? { 
+            ...chamado, 
+            cha_status: 2,
+            colaborador_nome: data.userName,
+            atc_colaborador: data.userId
+          }
+          : chamado
+      ));
+
+      // Limpar loading
+      if (window.clearActionLoading) {
+        window.clearActionLoading(data.chamadoId);
+      }
+  };
 
     const handleUserFinished = (data: UserFinishedData) => {
       console.log('✅ Usuário finalizou:', data.chamadoId);
+
+      // Remover timer
       setTimers(prev => prev.filter(timer => timer.chamadoId !== data.chamadoId));
+
+      setChamados(prev => prev.map(chamado =>
+        chamado.cha_id === data.chamadoId
+        ? { ...chamado, cha_status: 3 } 
+        : chamado
+      ));
+
+      // Limpar loading se a função estiver disponível
+      if (window.clearActionLoading) {
+        window.clearActionLoading(data.chamadoId);
+      }
     };
+
+    const handleUserCancelled = (data: UserFinishedData) => {
+      console.log('❌ Usuário cancelou:', data.chamadoId);
+
+      // remover timer
+      setTimers(prev => prev.filter(timer => timer.chamadoId !== data.chamadoId));
+
+      // IMPORTANTE: Atualizar o status do chamado de volta para aberto
+      setChamados(prev => prev.map(chamado =>
+        chamado.cha_id === data.chamadoId
+          ? { 
+            ...chamado, 
+            cha_status: 1, 
+            colaborador_nome: undefined,
+            atc_colaborador: undefined,
+          }
+          : chamado
+      ));
+
+      if (window.clearActionLoading) {
+        window.clearActionLoading(data.chamadoId);
+      }
+    }
 
     // Registrar listeners
     socket.on('timers_sync', handleTimersSync);
     socket.on('user_started_attendance', handleUserStarted);
     socket.on('user_finished_attendance', handleUserFinished);
-    socket.on('user_cancelled_attendance', handleUserFinished);
+    socket.on('user_cancelled_attendance', handleUserCancelled);
 
     return () => {
       socket.off('timers_sync', handleTimersSync);
       socket.off('user_started_attendance', handleUserStarted);
       socket.off('user_finished_attendance', handleUserFinished);
-      socket.off('user_cancelled_attendance', handleUserFinished);
+      socket.off('user_cancelled_attendance', handleUserCancelled);
       
       if (updateTimeoutRef.current) {
         clearTimeout(updateTimeoutRef.current);

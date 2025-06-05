@@ -53,66 +53,168 @@ export class ChamadoModel {
       `;
 
       // Query CORRIGIDA - SEM GROUP BY
-      const dataQuery = `
-        SELECT 
-          c.cha_id,
-          c.cha_operador,
-          c.cha_tipo,
-          c.cha_cliente,
-          c.cha_produto,
-          c.cha_DT,
-          c.cha_status,
-          c.cha_descricao,
-          c.cha_plano,
-          c.cha_data_hora_abertura,
-          c.cha_data_hora_atendimento,
-          c.cha_data_hora_termino,
-          c.cha_acao,
-          c.cha_visualizado,
-          c.cha_local,
+      // const dataQuery = `
+      //   SELECT 
+      //     c.cha_id,
+      //     c.cha_operador,
+      //     c.cha_tipo,
+      //     c.cha_cliente,
+      //     c.cha_produto,
+      //     c.cha_DT,
+      //     c.cha_status,
+      //     c.cha_descricao,
+      //     c.cha_plano,
+      //     c.cha_data_hora_abertura,
+      //     c.cha_data_hora_atendimento,
+      //     c.cha_data_hora_termino,
+      //     c.cha_acao,
+      //     c.cha_visualizado,
+      //     c.cha_local,
           
-          -- Campos relacionados
-          tc.tch_descricao AS tipo_chamado,
-          sc.stc_descricao AS status_chamado,
-          cl.cli_nome AS cliente_nome,
-          p.pro_nome AS produto_nome,
-          loc.loc_nome AS local_chamado,
+      //     -- Campos relacionados
+      //     tc.tch_descricao AS tipo_chamado,
+      //     sc.stc_descricao AS status_chamado,
+      //     cl.cli_nome AS cliente_nome,
+      //     p.pro_nome AS produto_nome,
+      //     loc.loc_nome AS local_chamado,
           
-          -- Dados do atendimento ativo (APENAS UM REGISTRO POR CHAMADO)
-          (SELECT col.col_nome FROM atendimentos_chamados atc2 
-          LEFT JOIN colaboradores col ON atc2.atc_colaborador = col.col_id 
-          WHERE atc2.atc_chamado = c.cha_id AND atc2.atc_data_hora_termino IS NULL 
-          ORDER BY atc2.atc_data_hora_inicio DESC LIMIT 1) AS colaborador_nome,
+      //     -- Dados do atendimento ativo (APENAS UM REGISTRO POR CHAMADO)
+      //     (SELECT col.col_nome FROM atendimentos_chamados atc2 
+      //     LEFT JOIN colaboradores col ON atc2.atc_colaborador = col.col_id 
+      //     WHERE atc2.atc_chamado = c.cha_id AND atc2.atc_data_hora_termino IS NULL 
+      //     ORDER BY atc2.atc_data_hora_inicio DESC LIMIT 1) AS colaborador_nome,
           
-          (SELECT atc2.atc_colaborador FROM atendimentos_chamados atc2 
-          WHERE atc2.atc_chamado = c.cha_id AND atc2.atc_data_hora_termino IS NULL 
-          ORDER BY atc2.atc_data_hora_inicio DESC LIMIT 1) AS atc_colaborador,
+      //     (SELECT atc2.atc_colaborador FROM atendimentos_chamados atc2 
+      //     WHERE atc2.atc_chamado = c.cha_id AND atc2.atc_data_hora_termino IS NULL 
+      //     ORDER BY atc2.atc_data_hora_inicio DESC LIMIT 1) AS atc_colaborador,
           
-          (SELECT atc2.atc_data_hora_inicio FROM atendimentos_chamados atc2 
-          WHERE atc2.atc_chamado = c.cha_id AND atc2.atc_data_hora_termino IS NULL 
-          ORDER BY atc2.atc_data_hora_inicio DESC LIMIT 1) AS atc_data_hora_inicio,
+      //     (SELECT atc2.atc_data_hora_inicio FROM atendimentos_chamados atc2 
+      //     WHERE atc2.atc_chamado = c.cha_id AND atc2.atc_data_hora_termino IS NULL 
+      //     ORDER BY atc2.atc_data_hora_inicio DESC LIMIT 1) AS atc_data_hora_inicio,
           
-          ac.ach_descricao AS acao_descricao,
+      //     ac.ach_descricao AS acao_descricao,
           
-          -- Campos calculados
-          TIMESTAMPDIFF(MINUTE, c.cha_data_hora_abertura, NOW()) AS duracao_total,
-          IF(c.cha_status > 1, TIMESTAMPDIFF(MINUTE, c.cha_data_hora_atendimento, NOW()), 0) AS duracao_atendimento
+      //     -- Campos calculados
+      //     TIMESTAMPDIFF(MINUTE, c.cha_data_hora_abertura, NOW()) AS duracao_total,
+      //     IF(c.cha_status > 1, TIMESTAMPDIFF(MINUTE, c.cha_data_hora_atendimento, NOW()), 0) AS duracao_atendimento
 
-        FROM chamados c
-        LEFT JOIN tipos_chamado tc ON c.cha_tipo = tc.tch_id
-        LEFT JOIN status_chamado sc ON c.cha_status = sc.stc_id
-        LEFT JOIN clientes cl ON c.cha_cliente = cl.cli_id
-        LEFT JOIN produtos p ON c.cha_produto = p.pro_id
-        LEFT JOIN local_chamado loc ON c.cha_local = loc.loc_id
-        LEFT JOIN acoes_chamados ac ON c.cha_acao = ac.ach_id
+      //   FROM chamados c
+      //   LEFT JOIN tipos_chamado tc ON c.cha_tipo = tc.tch_id
+      //   LEFT JOIN status_chamado sc ON c.cha_status = sc.stc_id
+      //   LEFT JOIN clientes cl ON c.cha_cliente = cl.cli_id
+      //   LEFT JOIN produtos p ON c.cha_produto = p.pro_id
+      //   LEFT JOIN local_chamado loc ON c.cha_local = loc.loc_id
+      //   LEFT JOIN acoes_chamados ac ON c.cha_acao = ac.ach_id
         
-        ${whereClause}
-        ORDER BY 
-          c.cha_status DESC,
-          duracao_total DESC,
-          duracao_atendimento DESC
-        LIMIT ${pagination.limit} OFFSET ${pagination.offset}
-      `;
+      //   ${whereClause}
+      //   ORDER BY 
+      //     c.cha_status DESC,
+      //     duracao_total DESC,
+      //     duracao_atendimento DESC
+      //   LIMIT ${pagination.limit} OFFSET ${pagination.offset}
+      // `;
+      const dataQuery = `
+      SELECT 
+        c.cha_id,
+        c.cha_operador,
+        c.cha_tipo,
+        c.cha_cliente,
+        c.cha_produto,
+        c.cha_DT,
+        c.cha_status,
+        c.cha_descricao,
+        c.cha_plano,
+        c.cha_data_hora_abertura,
+        c.cha_data_hora_atendimento,
+        c.cha_data_hora_termino,
+        c.cha_acao,
+        c.cha_visualizado,
+        c.cha_local,
+        
+        -- Campos relacionados
+        tc.tch_descricao AS tipo_chamado,
+        sc.stc_descricao AS status_chamado,
+        cl.cli_nome AS cliente_nome,
+        p.pro_nome AS produto_nome,
+        loc.loc_nome AS local_chamado,
+        
+        -- Colaborador responsável (quem finalizou ou está atendendo)
+        COALESCE(
+          -- Se finalizado, pegar quem finalizou
+          (SELECT col_final.col_nome 
+           FROM atendimentos_chamados atc_final 
+           LEFT JOIN colaboradores col_final ON atc_final.atc_colaborador = col_final.col_id 
+           WHERE atc_final.atc_chamado = c.cha_id 
+           AND atc_final.atc_data_hora_termino IS NOT NULL 
+           ORDER BY atc_final.atc_data_hora_termino DESC 
+           LIMIT 1),
+          -- Se em andamento, pegar quem está atendendo
+          (SELECT col_ativo.col_nome 
+           FROM atendimentos_chamados atc_ativo 
+           LEFT JOIN colaboradores col_ativo ON atc_ativo.atc_colaborador = col_ativo.col_id 
+           WHERE atc_ativo.atc_chamado = c.cha_id 
+           AND atc_ativo.atc_data_hora_termino IS NULL 
+           ORDER BY atc_ativo.atc_data_hora_inicio DESC 
+           LIMIT 1)
+        ) AS colaborador_nome,
+        
+        -- ID do colaborador responsável
+        COALESCE(
+          (SELECT atc_final.atc_colaborador
+           FROM atendimentos_chamados atc_final 
+           WHERE atc_final.atc_chamado = c.cha_id 
+           AND atc_final.atc_data_hora_termino IS NOT NULL 
+           ORDER BY atc_final.atc_data_hora_termino DESC 
+           LIMIT 1),
+          (SELECT atc_ativo.atc_colaborador
+           FROM atendimentos_chamados atc_ativo 
+           WHERE atc_ativo.atc_chamado = c.cha_id 
+           AND atc_ativo.atc_data_hora_termino IS NULL 
+           ORDER BY atc_ativo.atc_data_hora_inicio DESC 
+           LIMIT 1)
+        ) AS atc_colaborador,
+        
+        -- Data de início do atendimento
+        COALESCE(
+          (SELECT atc_final.atc_data_hora_inicio
+           FROM atendimentos_chamados atc_final 
+           WHERE atc_final.atc_chamado = c.cha_id 
+           AND atc_final.atc_data_hora_termino IS NOT NULL 
+           ORDER BY atc_final.atc_data_hora_termino DESC 
+           LIMIT 1),
+          (SELECT atc_ativo.atc_data_hora_inicio
+           FROM atendimentos_chamados atc_ativo 
+           WHERE atc_ativo.atc_chamado = c.cha_id 
+           AND atc_ativo.atc_data_hora_termino IS NULL 
+           ORDER BY atc_ativo.atc_data_hora_inicio DESC 
+           LIMIT 1)
+        ) AS atc_data_hora_inicio,
+        
+        ac.ach_descricao AS acao_descricao,
+        
+        -- Campos calculados
+        TIMESTAMPDIFF(MINUTE, c.cha_data_hora_abertura, NOW()) AS duracao_total,
+        IF(c.cha_status > 1, TIMESTAMPDIFF(MINUTE, c.cha_data_hora_atendimento, NOW()), 0) AS duracao_atendimento
+
+      FROM chamados c
+      LEFT JOIN tipos_chamado tc ON c.cha_tipo = tc.tch_id
+      LEFT JOIN status_chamado sc ON c.cha_status = sc.stc_id
+      LEFT JOIN clientes cl ON c.cha_cliente = cl.cli_id
+      LEFT JOIN produtos p ON c.cha_produto = p.pro_id
+      LEFT JOIN local_chamado loc ON c.cha_local = loc.loc_id
+      LEFT JOIN acoes_chamados ac ON c.cha_acao = ac.ach_id
+      
+      ${whereClause}
+      ORDER BY 
+        CASE 
+          WHEN c.cha_status = 3 THEN c.cha_data_hora_termino 
+          WHEN c.cha_status = 2 THEN c.cha_data_hora_atendimento
+          ELSE c.cha_data_hora_abertura 
+        END DESC,
+        c.cha_status DESC,
+        duracao_total DESC
+      LIMIT ${pagination.limit} OFFSET ${pagination.offset}
+    `;
 
       const [countResult, chamados] = await Promise.all([
         executeQuery(countQuery, params),
@@ -129,7 +231,7 @@ export class ChamadoModel {
     }
   }
 
-  // Buscar chamado por ID
+
   static async findById(id: number): Promise<Chamado | null> {
     try {
       const query = `
@@ -140,7 +242,44 @@ export class ChamadoModel {
           cl.cli_nome as cliente_nome,
           p.pro_nome as produto_nome,
           ac.ach_descricao as acao_descricao,
-          loc.loc_nome as local_chamado
+          loc.loc_nome as local_chamado,
+          
+          -- Buscar o responsável (quem finalizou ou está atendendo)
+          COALESCE(
+            -- Se finalizado, pegar quem finalizou (último atendimento)
+            (SELECT col_final.col_nome 
+            FROM atendimentos_chamados atc_final 
+            LEFT JOIN colaboradores col_final ON atc_final.atc_colaborador = col_final.col_id 
+            WHERE atc_final.atc_chamado = c.cha_id 
+            AND atc_final.atc_data_hora_termino IS NOT NULL 
+            ORDER BY atc_final.atc_data_hora_termino DESC 
+            LIMIT 1),
+            -- Se em andamento, pegar quem está atendendo
+            (SELECT col_ativo.col_nome 
+            FROM atendimentos_chamados atc_ativo 
+            LEFT JOIN colaboradores col_ativo ON atc_ativo.atc_colaborador = col_ativo.col_id 
+            WHERE atc_ativo.atc_chamado = c.cha_id 
+            AND atc_ativo.atc_data_hora_termino IS NULL 
+            ORDER BY atc_ativo.atc_data_hora_inicio DESC 
+            LIMIT 1)
+          ) AS colaborador_nome,
+          
+          -- ID do colaborador responsável
+          COALESCE(
+            (SELECT atc_final.atc_colaborador
+            FROM atendimentos_chamados atc_final 
+            WHERE atc_final.atc_chamado = c.cha_id 
+            AND atc_final.atc_data_hora_termino IS NOT NULL 
+            ORDER BY atc_final.atc_data_hora_termino DESC 
+            LIMIT 1),
+            (SELECT atc_ativo.atc_colaborador
+            FROM atendimentos_chamados atc_ativo 
+            WHERE atc_ativo.atc_chamado = c.cha_id 
+            AND atc_ativo.atc_data_hora_termino IS NULL 
+            ORDER BY atc_ativo.atc_data_hora_inicio DESC 
+            LIMIT 1)
+          ) AS atc_colaborador
+
         FROM chamados c
         LEFT JOIN tipos_chamado tc ON c.cha_tipo = tc.tch_id
         LEFT JOIN status_chamado sc ON c.cha_status = sc.stc_id
@@ -154,7 +293,18 @@ export class ChamadoModel {
       const results = await executeQuery(query, [id]);
       
       if (Array.isArray(results) && results.length > 0) {
-        return results[0] as Chamado;
+        const chamado = results[0] as Chamado;
+        
+        // Debug log
+        console.log(`📋 Chamado ${id} carregado:`, {
+          id: chamado.cha_id,
+          status: chamado.cha_status,
+          colaborador_nome: chamado.colaborador_nome,
+          atc_colaborador: chamado.atc_colaborador,
+          acao_descricao: chamado.acao_descricao
+        });
+        
+        return chamado;
       }
       
       return null;
