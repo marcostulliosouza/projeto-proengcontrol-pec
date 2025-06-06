@@ -8,7 +8,7 @@ import { useGlobalAttendance } from '../hooks/useGlobalAttendance';
 import type { Chamado, FilterState, PaginationInfo } from '../types';
 import ChamadoForm from '../components/forms/ChamadoForm';
 import ChamadoAtendimento from '../components/chamados/ChamadoAtendimento';
-import { useTransferDetection } from '../hooks/useTransferDetection';
+// import { useTransferDetection } from '../hooks/useTransferDetection';
 import TransferButton from '../components/chamados/TransferButton';
 
 const Chamados: React.FC = () => {
@@ -37,8 +37,8 @@ const Chamados: React.FC = () => {
   const [atendimentoModalOpen, setAtendimentoModalOpen] = useState(false);
 
   // NOVO: State para controle automático de transferências
-  const [autoOpenChamadoId, setAutoOpenChamadoId] = useState<number | null>(null);
-  const [debugTransfer, setDebugTransfer] = useState<string>('');
+  // const [autoOpenChamadoId, setAutoOpenChamadoId] = useState<number | null>(null);
+  // const [debugTransfer, setDebugTransfer] = useState<string>('');
 
   // Dados auxiliares
   const [tipos, setTipos] = useState<TipoChamado[]>([]);
@@ -66,17 +66,42 @@ const Chamados: React.FC = () => {
   const { isInAttendance, attendanceChamado } = useGlobalAttendance();
 
   // NOVO: Hook para detectar transferências
-  useTransferDetection({
-    onTransferReceived: (chamadoId: number) => {
-      console.log(`🎯 Detectada transferência para chamado ${chamadoId}, preparando abertura automática`);
-      setDebugTransfer(`Recebido: ${chamadoId} às ${new Date().toLocaleTimeString()}`);
-      setAutoOpenChamadoId(chamadoId);
-    }
-  });
+  // useTransferDetection({
+  //   onTransferReceived: (chamadoId: number) => {
+  //     console.log(`🎯 Detectada transferência para chamado ${chamadoId}, preparando abertura automática`);
+  //     setDebugTransfer(`Recebido: ${chamadoId} às ${new Date().toLocaleTimeString()}`);
+  //     setAutoOpenChamadoId(chamadoId);
+  //   }
+  // });
 
   // EFEITO MODIFICADO: Controle do modal de atendimento + transferências
   useEffect(() => {
-    // Lógica original mantida
+    // Verificar se há transferência pendente
+    const checkPendingTransfer = () => {
+      const keys = Object.keys(sessionStorage).filter(key => key.startsWith('received_transfer_'));
+      for (const key of keys) {
+        try {
+          const transferData = JSON.parse(sessionStorage.getItem(key) || '{}');
+          if (transferData.chamadoId && isInAttendance && attendanceChamado?.cha_id === transferData.chamadoId) {
+            console.log(`🎯 Abrindo modal automaticamente para transferência ${transferData.chamadoId}`);
+            setAtendimentoModalOpen(true);
+            sessionStorage.removeItem(key);
+            return true;
+          }
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        } catch (error) {
+          sessionStorage.removeItem(key);
+        }
+      }
+      return false;
+    };
+
+    // Verificar transferências pendentes primeiro
+    if (checkPendingTransfer()) {
+      return;
+    }
+
+    // Lógica original para casos normais
     if (isInAttendance && attendanceChamado && !atendimentoModalOpen) {
       console.log('🔄 Abrindo modal de atendimento - usuário em atendimento');
       setAtendimentoModalOpen(true);
@@ -84,24 +109,17 @@ const Chamados: React.FC = () => {
       console.log('🔄 Fechando modal - não está mais em atendimento');
       setAtendimentoModalOpen(false);
     }
-
-    // NOVA LÓGICA: Abertura automática para transferências
-    if (autoOpenChamadoId && isInAttendance && attendanceChamado?.cha_id === autoOpenChamadoId) {
-      console.log(`🎯 Abrindo modal automaticamente para chamado transferido ${autoOpenChamadoId}`);
-      setAtendimentoModalOpen(true);
-      setAutoOpenChamadoId(null); // Limpar flag
-    }
-  }, [isInAttendance, attendanceChamado, atendimentoModalOpen, autoOpenChamadoId]);
+  }, [isInAttendance, attendanceChamado, atendimentoModalOpen]);
 
   // NOVO: Limpar debug após usar
-  useEffect(() => {
-    if (autoOpenChamadoId && debugTransfer) {
-      const timer = setTimeout(() => {
-        setDebugTransfer('');
-      }, 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [autoOpenChamadoId, debugTransfer]);
+  // useEffect(() => {
+  //   if (autoOpenChamadoId && debugTransfer) {
+  //     const timer = setTimeout(() => {
+  //       setDebugTransfer('');
+  //     }, 5000);
+  //     return () => clearTimeout(timer);
+  //   }
+  // }, [autoOpenChamadoId, debugTransfer]);
 
   // Carregar dados auxiliares
   useEffect(() => {

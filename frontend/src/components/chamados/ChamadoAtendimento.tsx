@@ -40,6 +40,26 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
     }
   }, [shouldClose, onCancel]);
 
+  useEffect(() => {
+    return () => {
+      // Limpar qualquer flag de transferência ao desmontar
+      const keys = Object.keys(sessionStorage).filter(key => 
+        key.startsWith('transferred_') || key.startsWith('received_transfer_')
+      );
+      keys.forEach(key => sessionStorage.removeItem(key));
+    };
+  }, []);
+
+  useEffect(() => {
+    // Se este chamado foi transferido, fechar imediatamente
+    const wasTransferred = sessionStorage.getItem(`transferred_${chamado.cha_id}`);
+    if (wasTransferred) {
+      console.log('🔄 Chamado foi transferido anteriormente, fechando modal');
+      setShouldClose(true);
+      sessionStorage.removeItem(`transferred_${chamado.cha_id}`);
+    }
+  }, [chamado.cha_id]);
+
   // Buscar tempo inicial do atendimento
   useEffect(() => {
     const initializeTimer = async () => {
@@ -130,6 +150,17 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
       setShouldClose(true);
     };
 
+    const handleTransferredOut = (data: { chamadoId: number; userId: number; timestamp: string }) => {
+      console.log('🔄 Socket: Chamado transferido (saída) recebido', data);
+      if (data.chamadoId === chamado.cha_id && data.userId === currentAttendance?.userId) {
+        console.log('🔄 Meu chamado foi transferido - fechando modal DEFINITIVAMENTE');
+        
+        // IMPORTANTE: Marcar como transferido para evitar reabertura
+        sessionStorage.setItem(`transferred_${data.chamadoId}`, 'true');
+        setShouldClose(true);
+      }
+    };
+
     // Escutar atualizações de timers para detectar remoção
     const handleTimersSync = (timersData: { chamadoId: number; userId: number }[]) => {
       if (!Array.isArray(timersData)) return;
@@ -149,6 +180,7 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
     socket.on('attendance_finished', handleMyAttendanceFinished);
     socket.on('attendance_cancelled', handleMyAttendanceCancelled);
     socket.on('timers_sync', handleTimersSync);
+    socket.on('transferred_out', handleTransferredOut);
 
     return () => {
       socket.off('user_finished_attendance', handleAttendanceFinished);
@@ -156,8 +188,9 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
       socket.off('attendance_finished', handleMyAttendanceFinished);
       socket.off('attendance_cancelled', handleMyAttendanceCancelled);
       socket.off('timers_sync', handleTimersSync);
+      socket.off('transferred_out', handleTransferredOut);
     };
-  }, [socket, chamado.cha_id, currentAttendance?.userId]);
+  }, [socket, chamado.cha_id, currentAttendance?.userId, shouldClose]);
 
   const formatTimer = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);

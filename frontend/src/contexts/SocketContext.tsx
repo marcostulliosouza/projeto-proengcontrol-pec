@@ -45,7 +45,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
   const isInitializing = useRef(false);
   const lastUserId = useRef<number | null>(null);
 
-  const { showSuccessToast, showInfoToast } = useToast();
+  const { showSuccessToast } = useToast();
 
 
   // Verificar atendimento ativo via API - MEMOIZED
@@ -183,33 +183,47 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       alert(`Erro: ${data.reason}`);
     });
 
-    newSocket.on('user_transferred_out', (data: { chamadoId: number; userId: number }) => {
-  console.log('🔄 Chamado transferido para outro usuário:', data);
-  if (data.userId === authState.user?.id) {
-    setCurrentAttendance(null);
-    setIsUserInAttendance(false);
-    
-    // Notificação
-    showInfoToast(
-      'Chamado Transferido',
-      `Chamado #${data.chamadoId} foi transferido com sucesso`
-    );
-  }
+    newSocket.on('user_transferred_out', (data: { chamadoId: number; userId: number; timestamp: string }) => {
+    console.log('🔄 Chamado transferido para outro usuário:', data);
+    if (data.userId === authState.user?.id) {
+      console.log('🔄 Meu chamado foi transferido, limpando estado IMEDIATAMENTE');
+      
+      // Limpar estado IMEDIATAMENTE
+      setCurrentAttendance(null);
+      setIsUserInAttendance(false);
+      
+      // Forçar atualização após um delay para garantir
+      setTimeout(() => {
+        setCurrentAttendance(null);
+        setIsUserInAttendance(false);
+      }, 500);
+    }
     });
 
-    newSocket.on('user_transferred_in', (data: AttendanceInfo & { motivo?: string }) => {
-      console.log('🔄 Chamado recebido via transferência:', data);
-      if (data.userId === authState.user?.id) {
-        setCurrentAttendance(data);
-        setIsUserInAttendance(true);
-        
-        // Notificação
+  newSocket.on('user_transferred_in', (data: AttendanceInfo & { motivo?: string; timestamp: string }) => {
+    console.log('🔄 Chamado recebido via transferência:', data);
+    if (data.userId === authState.user?.id) {
+      console.log('🔄 Configurando novo atendimento recebido');
+      
+      // Configurar novo atendimento IMEDIATAMENTE
+      setCurrentAttendance(data);
+      setIsUserInAttendance(true);
+      
+      // Marcar para abertura automática
+      sessionStorage.setItem(`received_transfer_${data.chamadoId}`, JSON.stringify({
+        timestamp: data.timestamp,
+        chamadoId: data.chamadoId
+      }));
+      
+      // Notificação (se disponível)
+      if (showSuccessToast) {
         showSuccessToast(
           'Novo Chamado Recebido!',
           `Você recebeu o chamado #${data.chamadoId} via transferência`
         );
       }
-    });
+    }
+  });
 
     socketRef.current = newSocket;
     setSocket(newSocket);

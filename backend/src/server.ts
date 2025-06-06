@@ -198,67 +198,61 @@ io.on('connection', (socket) => {
 
   // NOVO: Transferir atendimento
   socket.on('transfer_attendance', async (data) => {
-    const { chamadoId, antigoColaboradorId, novoColaboradorId } = data;
+  const { chamadoId, antigoColaboradorId, novoColaboradorId } = data;
+  
+  try {
+    console.log(`🔄 Socket: Processando transferência - Chamado ${chamadoId}: ${antigoColaboradorId} → ${novoColaboradorId}`);
     
-    try {
-      console.log(`🔄 Socket: Processando transferência - Chamado ${chamadoId}: ${antigoColaboradorId} → ${novoColaboradorId}`);
-      
-      // Buscar informações dos usuários
-      const antigoUser = activeUsers.get(socket.id);
-      const novoUserEntry = Array.from(activeUsers.values()).find(user => user.id === novoColaboradorId);
-      
-      if (!novoUserEntry) {
-        console.log('⚠️ Usuário destino não está online');
-        socket.emit('transfer_error', {
-          message: 'Usuário destino não está online',
-          chamadoId
-        });
-        return;
-      }
-      
-      console.log(`👤 Transferindo de: ${antigoUser?.nome || 'Unknown'} para: ${novoUserEntry.nome}`);
-      
-      // 1. Para o usuário que transferiu - evento específico
-      socket.emit('user_transferred_out', {
-        chamadoId,
-        userId: antigoColaboradorId,
-        timestamp: new Date().toISOString()
-      });
-      
-      // 2. Para o usuário que recebeu - evento direto e específico
+    const antigoUser = activeUsers.get(socket.id);
+    const novoUserEntry = Array.from(activeUsers.values()).find(user => user.id === novoColaboradorId);
+    
+    if (!novoUserEntry) {
+      socket.emit('transfer_error', { message: 'Usuário destino não está online', chamadoId });
+      return;
+    }
+    
+    const timestamp = new Date().toISOString();
+    
+    // 1. PRIMEIRO: Notificar quem transferiu para fechar modal
+    socket.emit('user_transferred_out', {
+      chamadoId,
+      userId: antigoColaboradorId,
+      timestamp
+    });
+    
+    // 2. SEGUNDO: Aguardar um pouco e notificar quem recebeu
+    setTimeout(() => {
       io.to(novoUserEntry.socketId).emit('user_transferred_in', {
         chamadoId,
         userId: novoColaboradorId,
         userName: novoUserEntry.nome,
-        startTime: new Date().toISOString(),
+        startTime: timestamp,
         motivo: 'transferred_in',
         transferredBy: antigoUser?.nome || 'Usuário',
-        timestamp: new Date().toISOString()
+        timestamp
       });
       
-      // 3. Broadcast geral para atualizar timers (para todos os outros usuários)
+      // 3. TERCEIRO: Broadcast geral para atualizar timers
       socket.broadcast.emit('user_started_attendance', {
         chamadoId,
         userId: novoColaboradorId,
         userName: novoUserEntry.nome,
-        startTime: new Date().toISOString(),
+        startTime: timestamp,
         motivo: 'transferred_general'
       });
       
-      console.log(`✅ Socket: Eventos de transferência emitidos com sucesso`);
-      
-      // Atualizar broadcasts após um pequeno delay
-      setTimeout(async () => {
-        await broadcastActiveAttendances();
-      }, 1500);
-      
-    } catch (error) {
-      console.error('❌ Erro ao processar transferência via socket:', error);
-      socket.emit('transfer_error', {
-        message: 'Erro interno ao processar transferência',
-        chamadoId
-      });
-    }
+      console.log(`✅ Socket: Eventos de transferência emitidos em sequência`);
+    }, 500);
+    
+    // 4. QUARTO: Atualizar broadcasts após delay maior
+    setTimeout(async () => {
+      await broadcastActiveAttendances();
+    }, 2000);
+    
+  } catch (error) {
+    console.error('❌ Erro ao processar transferência via socket:', error);
+    socket.emit('transfer_error', { message: 'Erro interno', chamadoId });
+  }
   });
 
   // NOVO: Confirmar recebimento de transferência
