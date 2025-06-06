@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { ChamadoModel } from '../models/Chamado';
 import { AtendimentoAtivoModel } from '../models/AtendimentoAtivo';
-import { ApiResponse, AuthRequest, PaginationParams, FilterParams } from '../types';
+import { ApiResponse, AuthRequest, PaginationParams, FilterParams, ActiveUser } from '../types';
 import { asyncHandler } from '../middlewares/errorHandler';
 import { executeQuery } from '../config/database';
 
@@ -371,6 +371,95 @@ try {
     timestamp: new Date().toISOString()
   } as ApiResponse);
 }
+});
+
+// Buscar usuários online
+export const getUsuariosOnline = asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const io = req.app.get('io');
+    const activeUsers = req.app.get('activeUsers') as Map<string, ActiveUser> || new Map<string, ActiveUser>();
+    
+    // Filtrar apenas usuários ativos com conexão socket
+    const usuariosOnline = Array.from(activeUsers.values())
+      .filter(user => user.socketId && user.connectedAt)
+      .map(user => ({
+        id: user.id,
+        nome: user.nome,
+        categoria: user.categoria,
+        connectedAt: user.connectedAt
+      }));
+
+    res.json({
+      success: true,
+      data: usuariosOnline,
+      timestamp: new Date().toISOString()
+    } as ApiResponse);
+  } catch (error) {
+    console.error('Erro ao buscar usuários online:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao buscar usuários online',
+      timestamp: new Date().toISOString()
+    } as ApiResponse);
+  }
+});
+
+// Transferir chamado
+export const transferirChamado = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const chamadoId = parseInt(req.params.id);
+  const { novoColaboradorId } = req.body;
+  const antigoColaboradorId = req.user?.id;
+
+  if (isNaN(chamadoId) || !antigoColaboradorId || !novoColaboradorId) {
+    res.status(400).json({
+      success: false,
+      message: 'Dados inválidos para transferência',
+      timestamp: new Date().toISOString()
+    } as ApiResponse);
+    return;
+  }
+
+  try {
+    console.log(`🔄 Transferindo chamado ${chamadoId}: ${antigoColaboradorId} → ${novoColaboradorId}`);
+    
+    // Usar novo modelo de transferência
+    await AtendimentoAtivoModel.transferir(chamadoId, antigoColaboradorId, novoColaboradorId);
+
+    // Emitir eventos via WebSocket IMEDIATAMENTE
+    const io = req.app.get('io');
+    if (io) {
+      // Para o usuário que transferiu
+      io.emit('user_finished_attendance', {
+        userId: antigoColaboradorId,
+        chamadoId: chamadoId,
+        motivo: 'transferred_out'
+      });
+
+      // Para o usuário que recebeu
+      io.emit('user_started_attendance', {
+        chamadoId: chamadoId,
+        userId: novoColaboradorId,
+        userName: req.body.novoColaboradorNome || 'Usuário',
+        startTime: new Date().toISOString(),
+        motivo: 'transferred_in'
+      });
+
+      console.log(`📡 Eventos de transferência emitidos`);
+    }
+
+    res.json({
+      success: true,
+      message: 'Chamado transferido com sucesso',
+      timestamp: new Date().toISOString()
+    } as ApiResponse);
+  } catch (error) {
+    console.error('Erro ao transferir chamado:', error);
+    res.status(400).json({
+      success: false,
+      message: error instanceof Error ? error.message : 'Erro ao transferir chamado',
+      timestamp: new Date().toISOString()
+    } as ApiResponse);
+  }
 });
 
 // Finalizar chamado COM detrator e descrição (seguindo lógica do closeCall)

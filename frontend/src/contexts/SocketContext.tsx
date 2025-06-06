@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useAuth } from './AuthContext';
-
+import { useToast } from './ToastContext';
 interface AttendanceInfo {
   chamadoId: number;
   userId: number;
@@ -17,6 +17,7 @@ interface SocketContextType {
   startAttendance: (chamadoId: number) => Promise<AttendanceInfo | null>;
   cancelAttendance: (chamadoId: number) => void;
   finishAttendance: () => void;
+  transferAttendance: (chamadoId: number, novoColaboradorId: number) => void; // NOVO
 }
 
 interface AtendimentoAtivoAPI {
@@ -43,6 +44,9 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
   const socketRef = useRef<Socket | null>(null);
   const isInitializing = useRef(false);
   const lastUserId = useRef<number | null>(null);
+
+  const { showSuccessToast, showInfoToast } = useToast();
+
 
   // Verificar atendimento ativo via API - MEMOIZED
   const checkForActiveAttendance = useCallback(async () => {
@@ -179,6 +183,34 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       alert(`Erro: ${data.reason}`);
     });
 
+    newSocket.on('user_transferred_out', (data: { chamadoId: number; userId: number }) => {
+  console.log('🔄 Chamado transferido para outro usuário:', data);
+  if (data.userId === authState.user?.id) {
+    setCurrentAttendance(null);
+    setIsUserInAttendance(false);
+    
+    // Notificação
+    showInfoToast(
+      'Chamado Transferido',
+      `Chamado #${data.chamadoId} foi transferido com sucesso`
+    );
+  }
+    });
+
+    newSocket.on('user_transferred_in', (data: AttendanceInfo & { motivo?: string }) => {
+      console.log('🔄 Chamado recebido via transferência:', data);
+      if (data.userId === authState.user?.id) {
+        setCurrentAttendance(data);
+        setIsUserInAttendance(true);
+        
+        // Notificação
+        showSuccessToast(
+          'Novo Chamado Recebido!',
+          `Você recebeu o chamado #${data.chamadoId} via transferência`
+        );
+      }
+    });
+
     socketRef.current = newSocket;
     setSocket(newSocket);
 
@@ -257,6 +289,17 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     });
   }, [authState.user, isUserInAttendance]);
 
+  const transferAttendance = useCallback((chamadoId: number, novoColaboradorId: number) => {
+    if (!socketRef.current || !authState.user || !isUserInAttendance) return;
+
+    console.log(`🔄 Transferindo chamado ${chamadoId} para usuário ${novoColaboradorId}...`);
+    socketRef.current.emit('transfer_attendance', {
+      chamadoId,
+      antigoColaboradorId: authState.user.id,
+      novoColaboradorId
+    });
+  }, [authState.user, isUserInAttendance]);
+
   const value: SocketContextType = {
     socket,
     connected,
@@ -265,6 +308,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     startAttendance,
     cancelAttendance,
     finishAttendance,
+    transferAttendance,
   };
 
   return (

@@ -14,6 +14,8 @@ import {
   getDetratoresByTipo,
   getAcoesByDetrator,
   getRelatorioDetratores,
+  getUsuariosOnline,
+  transferirChamado
 } from '../controllers/chamadoController';
 import { AtendimentoAtivoModel } from '../models/AtendimentoAtivo';
 import { authenticateToken, requireRole } from '../middlewares/auth';
@@ -193,11 +195,13 @@ router.get('/tipos', getTipos);
 router.get('/status', getStatusChamado);
 router.get('/acoes', getAcoes);
 router.get('/produtos/:clienteId', getProdutosByCliente);
+router.get('/usuarios-online', getUsuariosOnline);
 router.get('/:id', getChamado);
 router.post('/', createChamado);
 router.put('/:id', updateChamado);
 router.put('/:id/iniciar', iniciarAtendimento);
 router.put('/:id/cancelar', cancelarAtendimento);
 router.put('/:id/finalizar', finalizarChamado);
+router.put('/:id/transferir', transferirChamado);
 
 export default router;

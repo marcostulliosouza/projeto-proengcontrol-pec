@@ -370,4 +370,62 @@ export class AtendimentoAtivoModel {
       connection.release();
     }
   }
+
+  // Transferir atendimento (baseado na lógica Python)
+  static async transferir(chamadoId: number, antigoColaboradorId: number, novoColaboradorId: number): Promise<boolean> {
+    const connection = await pool.getConnection();
+    
+    try {
+      await connection.beginTransaction();
+      console.log(`🔄 Iniciando transferência: Chamado ${chamadoId}, ${antigoColaboradorId} → ${novoColaboradorId}`);
+      
+      // 1. Verificar se o chamado está sendo atendido pelo usuário antigo
+      const atendimentoAtivo = await this.buscarPorChamado(chamadoId);
+      if (!atendimentoAtivo || atendimentoAtivo.atc_colaborador !== antigoColaboradorId) {
+        await connection.rollback();
+        throw new Error('Chamado não está sendo atendido por você');
+      }
+
+      // 2. Verificar se o novo colaborador já está atendendo algo
+      const novoColaboradorAtivo = await this.buscarPorColaborador(novoColaboradorId);
+      if (novoColaboradorAtivo) {
+        await connection.rollback();
+        throw new Error('Colaborador destino já está atendendo outro chamado');
+      }
+
+      // 3. Finalizar atendimento do usuário antigo
+      const finalizarQuery = `
+        UPDATE atendimentos_chamados 
+        SET atc_data_hora_termino = NOW()
+        WHERE atc_chamado = ? AND atc_colaborador = ? AND atc_data_hora_termino IS NULL
+      `;
+      await connection.execute(finalizarQuery, [chamadoId, antigoColaboradorId]);
+
+      // 4. Criar novo atendimento para o novo colaborador
+      const novoAtendimentoQuery = `
+        INSERT INTO atendimentos_chamados (atc_chamado, atc_colaborador, atc_data_hora_inicio)
+        VALUES (?, ?, NOW())
+      `;
+      await connection.execute(novoAtendimentoQuery, [chamadoId, novoColaboradorId]);
+
+      // 5. Atualizar data de atendimento do chamado
+      const atualizarChamadoQuery = `
+        UPDATE chamados 
+        SET cha_data_hora_atendimento = NOW()
+        WHERE cha_id = ?
+      `;
+      await connection.execute(atualizarChamadoQuery, [chamadoId]);
+
+      await connection.commit();
+      console.log(`✅ Transferência concluída com sucesso`);
+      return true;
+      
+    } catch (error) {
+      await connection.rollback();
+      console.error('Erro ao transferir chamado:', error);
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
 }

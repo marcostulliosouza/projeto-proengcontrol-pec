@@ -4,6 +4,7 @@ import { ChamadoService } from '../../services/chamadoService';
 import { useSocket } from '../../contexts/SocketContext';
 import type { Chamado } from '../../types';
 import SeletorDetrator from '../ui/DetratorActionSelector';
+import TransferirChamadoModal from './TransferirChamadoModal';
 
 interface ChamadoAtendimentoProps {
   chamado: Chamado;
@@ -24,6 +25,7 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
   const [loading, setLoading] = useState(false);
   const [realStartTime, setRealStartTime] = useState<Date | null>(null);
   const [shouldClose, setShouldClose] = useState(false);
+  const [showTransferirModal, setShowTransferirModal] = useState(false);
 
   const { socket, cancelAttendance, currentAttendance, finishAttendance } = useSocket();
 
@@ -365,6 +367,15 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
       {/* Botões */}
       <div className="flex justify-between">
         <Button
+          variant="warning"
+          onClick={() => setShowTransferirModal(true)}
+          disabled={loading}
+          title="Transferir chamado para outro usuário"
+        >
+          🔄 Transferir Chamado
+        </Button>
+
+        <Button
           variant="danger"
           onClick={() => setShowCancelarModal(true)}
           disabled={loading}
@@ -483,6 +494,18 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
             </div>
           </div>
         </Modal>
+      )}
+      {/* Modal de Transferencia de Chamado*/}
+      {showTransferirModal && (
+        <TransferirChamadoModal
+          isOpen={true}
+          onClose={() => setShowTransferirModal(false)}
+          chamado={chamado}
+          onTransfer={() => {
+            setShowTransferirModal(false);
+            setShouldClose(true); // Fechar modal de atendimento
+          }}
+        />
       )}
     </div>
   );

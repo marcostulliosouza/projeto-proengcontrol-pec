@@ -1,5 +1,5 @@
 import { ApiService } from './api';
-import type { Chamado, PaginationInfo, FilterState } from '../types';
+import type { Chamado, PaginationInfo, FilterState, UsuarioOnline } from '../types';
 
 export interface ChamadosResponse {
   chamados: Chamado[];
@@ -152,5 +152,18 @@ export class ChamadoService {
 
   static async getAcoes(): Promise<Acao[]> {
     return await ApiService.get<Acao[]>('/chamados/acoes');
+  }
+
+  // Buscar usuários online
+  static async getUsuariosOnline(): Promise<UsuarioOnline[]> {
+    return await ApiService.get<UsuarioOnline[]>('/chamados/usuarios-online');
+  }
+
+  // Transferir chamado
+  static async transferirChamado(chamadoId: number, novoColaboradorId: number, novoColaboradorNome: string): Promise<void> {
+    return await ApiService.put<void>(`/chamados/${chamadoId}/transferir`, {
+      novoColaboradorId,
+      novoColaboradorNome
+    });
   }
 }

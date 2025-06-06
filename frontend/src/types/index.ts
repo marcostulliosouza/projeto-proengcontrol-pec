@@ -189,4 +189,16 @@ export const CategoriaColaborador = {
   GERENTE: 5
 } as const;
 
+export interface UsuarioOnline {
+  id: number;
+  nome: string;
+  categoria: number;
+  connectedAt: string;
+}
+
+export interface TransferirChamadoData {
+  novoColaboradorId: number;
+  novoColaboradorNome: string;
+}
+
 export type CategoriaColaborador = typeof CategoriaColaborador[keyof typeof CategoriaColaborador];

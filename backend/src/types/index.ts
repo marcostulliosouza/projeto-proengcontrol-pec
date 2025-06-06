@@ -363,3 +363,11 @@ export interface EstatisticaAtendimento {
   tempo_maximo_segundos: number;
   colaboradores_distintos: number;
 }
+
+export interface ActiveUser {
+  id: number;
+  nome: string;
+  categoria: string;
+  socketId?: string;
+  connectedAt?: Date;
+}

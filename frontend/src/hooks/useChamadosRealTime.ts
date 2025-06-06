@@ -199,17 +199,51 @@ export const useChamadosRealTime = (initialChamados: Chamado[]) => {
       }
     }
 
+    const handleUserTransferredOut = (data: { chamadoId: number; userId: number; motivo?: string }) => {
+      console.log('🔄 Chamado transferido (saída):', data.chamadoId);
+      
+      // Remover timer
+      setTimers(prev => prev.filter(timer => timer.chamadoId !== data.chamadoId));
+      
+      // Atualizar status para aberto
+      setChamados(prev => prev.map(chamado =>
+        chamado.cha_id === data.chamadoId
+          ? { 
+            ...chamado, 
+            cha_status: 2, // Continua em andamento, mas com novo responsável
+            colaborador_nome: 'Transferido',
+            atc_colaborador: undefined
+          }
+          : chamado
+      ));
+      
+      if (window.clearActionLoading) {
+        window.clearActionLoading(data.chamadoId);
+      }
+    };
+
+    const handleUserTransferredIn = (data: UserAttendanceData & { motivo?: string }) => {
+      console.log('🔄 Chamado recebido via transferência:', data.chamadoId);
+      
+      // Mesmo tratamento que iniciar atendimento
+      handleUserStarted(data);
+    };
+
     // Registrar listeners
     socket.on('timers_sync', handleTimersSync);
     socket.on('user_started_attendance', handleUserStarted);
     socket.on('user_finished_attendance', handleUserFinished);
     socket.on('user_cancelled_attendance', handleUserCancelled);
+    socket.on('user_transferred_out', handleUserTransferredOut);
+    socket.on('user_transferred_in', handleUserTransferredIn);
 
     return () => {
       socket.off('timers_sync', handleTimersSync);
       socket.off('user_started_attendance', handleUserStarted);
       socket.off('user_finished_attendance', handleUserFinished);
       socket.off('user_cancelled_attendance', handleUserCancelled);
+      socket.off('user_transferred_out', handleUserTransferredOut);
+      socket.off('user_transferred_in', handleUserTransferredIn);
       
       if (updateTimeoutRef.current) {
         clearTimeout(updateTimeoutRef.current);

@@ -5,14 +5,17 @@ import { AuthProvider } from './contexts/AuthContext'
 import { SocketProvider } from './contexts/SocketContext' // Nova importação
 import App from './App.tsx'
 import './index.css'
+import { ToastProvider } from './contexts/ToastContext';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
       <AuthProvider>
-        <SocketProvider>
-          <App />
-        </SocketProvider>
+        <ToastProvider>
+          <SocketProvider>
+            <App />
+          </SocketProvider>
+        </ToastProvider>
       </AuthProvider>
     </BrowserRouter>
   </React.StrictMode>,

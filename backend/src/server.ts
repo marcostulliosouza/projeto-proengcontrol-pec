@@ -59,8 +59,9 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('combined'));
 }
 
-// Store para usuários conectados
+// MODIFICADO: Store para usuários conectados com acesso global
 const activeUsers = new Map();
+app.set('activeUsers', activeUsers);
 
 // Função para broadcast de atendimentos ativos
 const broadcastActiveAttendances = async () => {
@@ -108,9 +109,11 @@ setInterval(async () => {
 io.on('connection', (socket) => {
   console.log('🔌 Cliente conectado:', socket.id);
   
-  // Usuário se autentica
+  // MODIFICADO: Usuário se autentica
   socket.on('authenticate', async (userData) => {
     console.log('🔐 Usuário autenticando:', userData);
+    
+    // Armazenar usuário ativo com informações completas
     activeUsers.set(socket.id, {
       ...userData,
       socketId: socket.id,
@@ -193,6 +196,84 @@ io.on('connection', (socket) => {
     }
   });
 
+  // NOVO: Transferir atendimento
+  socket.on('transfer_attendance', async (data) => {
+    const { chamadoId, antigoColaboradorId, novoColaboradorId } = data;
+    
+    try {
+      console.log(`🔄 Socket: Processando transferência - Chamado ${chamadoId}: ${antigoColaboradorId} → ${novoColaboradorId}`);
+      
+      // Buscar informações dos usuários
+      const antigoUser = activeUsers.get(socket.id);
+      const novoUserEntry = Array.from(activeUsers.values()).find(user => user.id === novoColaboradorId);
+      
+      if (!novoUserEntry) {
+        console.log('⚠️ Usuário destino não está online');
+        socket.emit('transfer_error', {
+          message: 'Usuário destino não está online',
+          chamadoId
+        });
+        return;
+      }
+      
+      console.log(`👤 Transferindo de: ${antigoUser?.nome || 'Unknown'} para: ${novoUserEntry.nome}`);
+      
+      // 1. Para o usuário que transferiu - evento específico
+      socket.emit('user_transferred_out', {
+        chamadoId,
+        userId: antigoColaboradorId,
+        timestamp: new Date().toISOString()
+      });
+      
+      // 2. Para o usuário que recebeu - evento direto e específico
+      io.to(novoUserEntry.socketId).emit('user_transferred_in', {
+        chamadoId,
+        userId: novoColaboradorId,
+        userName: novoUserEntry.nome,
+        startTime: new Date().toISOString(),
+        motivo: 'transferred_in',
+        transferredBy: antigoUser?.nome || 'Usuário',
+        timestamp: new Date().toISOString()
+      });
+      
+      // 3. Broadcast geral para atualizar timers (para todos os outros usuários)
+      socket.broadcast.emit('user_started_attendance', {
+        chamadoId,
+        userId: novoColaboradorId,
+        userName: novoUserEntry.nome,
+        startTime: new Date().toISOString(),
+        motivo: 'transferred_general'
+      });
+      
+      console.log(`✅ Socket: Eventos de transferência emitidos com sucesso`);
+      
+      // Atualizar broadcasts após um pequeno delay
+      setTimeout(async () => {
+        await broadcastActiveAttendances();
+      }, 1500);
+      
+    } catch (error) {
+      console.error('❌ Erro ao processar transferência via socket:', error);
+      socket.emit('transfer_error', {
+        message: 'Erro interno ao processar transferência',
+        chamadoId
+      });
+    }
+  });
+
+  // NOVO: Confirmar recebimento de transferência
+  socket.on('confirm_transfer_received', (data) => {
+    const { chamadoId, userId } = data;
+    console.log(`✅ Confirmação de recebimento da transferência - Chamado ${chamadoId} por usuário ${userId}`);
+    
+    // Broadcast para confirmar que a transferência foi efetivada
+    io.emit('transfer_confirmed', {
+      chamadoId,
+      newResponsibleId: userId,
+      timestamp: new Date().toISOString()
+    });
+  });
+
   // Finalizar atendimento
   socket.on('finish_attendance', async (data) => {
     const { userId } = data;
@@ -260,7 +341,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Desconexão
+  // MODIFICADO: Desconexão
   socket.on('disconnect', () => {
     console.log('🔌 Cliente desconectado:', socket.id);
     

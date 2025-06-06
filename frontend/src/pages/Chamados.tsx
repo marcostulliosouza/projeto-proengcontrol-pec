@@ -8,6 +8,8 @@ import { useGlobalAttendance } from '../hooks/useGlobalAttendance';
 import type { Chamado, FilterState, PaginationInfo } from '../types';
 import ChamadoForm from '../components/forms/ChamadoForm';
 import ChamadoAtendimento from '../components/chamados/ChamadoAtendimento';
+import { useTransferDetection } from '../hooks/useTransferDetection';
+import TransferButton from '../components/chamados/TransferButton';
 
 const Chamados: React.FC = () => {
   const [initialChamados, setInitialChamados] = useState<Chamado[]>([]);
@@ -34,6 +36,10 @@ const Chamados: React.FC = () => {
   const [selectedChamado, setSelectedChamado] = useState<Chamado | null>(null);
   const [atendimentoModalOpen, setAtendimentoModalOpen] = useState(false);
 
+  // NOVO: State para controle automático de transferências
+  const [autoOpenChamadoId, setAutoOpenChamadoId] = useState<number | null>(null);
+  const [debugTransfer, setDebugTransfer] = useState<string>('');
+
   // Dados auxiliares
   const [tipos, setTipos] = useState<TipoChamado[]>([]);
   const [status, setStatus] = useState<StatusChamado[]>([]);
@@ -59,18 +65,43 @@ const Chamados: React.FC = () => {
   // Hook simplificado
   const { isInAttendance, attendanceChamado } = useGlobalAttendance();
 
+  // NOVO: Hook para detectar transferências
+  useTransferDetection({
+    onTransferReceived: (chamadoId: number) => {
+      console.log(`🎯 Detectada transferência para chamado ${chamadoId}, preparando abertura automática`);
+      setDebugTransfer(`Recebido: ${chamadoId} às ${new Date().toLocaleTimeString()}`);
+      setAutoOpenChamadoId(chamadoId);
+    }
+  });
 
-  // EFEITO SIMPLES: Se está em atendimento e modal não está aberto, abrir
+  // EFEITO MODIFICADO: Controle do modal de atendimento + transferências
   useEffect(() => {
+    // Lógica original mantida
     if (isInAttendance && attendanceChamado && !atendimentoModalOpen) {
-      console.log('🔄 Abrindo modal de atendimento');
+      console.log('🔄 Abrindo modal de atendimento - usuário em atendimento');
       setAtendimentoModalOpen(true);
     } else if (!isInAttendance && atendimentoModalOpen) {
-      // Se não está mais em atendimento, fechar o modal
       console.log('🔄 Fechando modal - não está mais em atendimento');
       setAtendimentoModalOpen(false);
     }
-  }, [isInAttendance, attendanceChamado, atendimentoModalOpen]);
+
+    // NOVA LÓGICA: Abertura automática para transferências
+    if (autoOpenChamadoId && isInAttendance && attendanceChamado?.cha_id === autoOpenChamadoId) {
+      console.log(`🎯 Abrindo modal automaticamente para chamado transferido ${autoOpenChamadoId}`);
+      setAtendimentoModalOpen(true);
+      setAutoOpenChamadoId(null); // Limpar flag
+    }
+  }, [isInAttendance, attendanceChamado, atendimentoModalOpen, autoOpenChamadoId]);
+
+  // NOVO: Limpar debug após usar
+  useEffect(() => {
+    if (autoOpenChamadoId && debugTransfer) {
+      const timer = setTimeout(() => {
+        setDebugTransfer('');
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [autoOpenChamadoId, debugTransfer]);
 
   // Carregar dados auxiliares
   useEffect(() => {
@@ -301,9 +332,20 @@ const Chamados: React.FC = () => {
             {item.cha_status === 2 && isBeingAttended && (
               <>
                 {isMyAttendance ? (
-                  <div className="flex items-center gap-1.5 px-2 py-1 bg-blue-100 text-blue-700 border border-blue-200 text-xs rounded-lg font-medium">
-                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-                    Você
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 px-2 py-1 bg-blue-100 text-blue-700 border border-blue-200 text-xs rounded-lg font-medium">
+                      <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                      Você
+                    </div>
+                    {/* NOVO: Botão de Transferir */}
+                    <TransferButton
+                      chamado={item}
+                      onTransfer={() => {
+                        handleChamadoUpdated(item);
+                        loadChamados(pagination.currentPage, false);
+                      }}
+                      disabled={isLoading}
+                    />
                   </div>
                 ) : (
                   <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-lg">
@@ -327,7 +369,7 @@ const Chamados: React.FC = () => {
           </div>
         );
       },
-      className: 'w-32 sticky right-0 bg-white',
+      className: 'w-48 sticky right-0 bg-white',
     },
     {
       key: 'plano_icon',
