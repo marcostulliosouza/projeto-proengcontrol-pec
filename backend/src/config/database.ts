@@ -50,11 +50,24 @@ export const executeQuery = async (
   params: any[] = []
 ): Promise<any> => {
   try {
-    const [results] = await pool.execute(query, params);
+    // Garantir que params seja sempre um array
+    const safeParams = Array.isArray(params) ? params : [];
+    
+    console.log('🔍 Executando query:', {
+      query: query.substring(0, 100) + '...',
+      paramsLength: safeParams.length,
+      params: safeParams
+    });
+    
+    const [results] = await pool.execute(query, safeParams);
+    
+    console.log('✅ Query executada com sucesso, resultados:', Array.isArray(results) ? results.length : 'não é array');
+    
     return results;
   } catch (error) {
-    console.error('Erro na query:', query);
-    console.error('Parâmetros:', params);
+    console.error('❌ Erro na query:', query);
+    console.error('❌ Parâmetros:', params);
+    console.error('❌ Erro completo:', error);
     throw error;
   }
 };
