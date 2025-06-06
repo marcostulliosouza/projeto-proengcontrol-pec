@@ -217,121 +217,210 @@ export const cancelarAtendimento = asyncHandler(async (req: AuthRequest, res: Re
   }
 });
 
-// Endpoints auxiliares
-export const getTipos = asyncHandler(async (req: Request, res: Response) => {
-  const tipos = await ChamadoModel.getTipos();
+export const transferirChamado = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const chamadoId = parseInt(req.params.id);
+  const { novoUsuarioId } = req.body;
+  const usuarioAtual = req.user?.id;
   
-  res.json({
-    success: true,
-    message: 'Tipos obtidos com sucesso',
-    data: tipos,
-    timestamp: new Date().toISOString()
-  } as ApiResponse);
-});
-
-export const getStatusChamado = asyncHandler(async (req: Request, res: Response) => {
-  const status = await ChamadoModel.getStatus();
-  
-  res.json({
-    success: true,
-    message: 'Status obtidos com sucesso',
-    data: status,
-    timestamp: new Date().toISOString()
-  } as ApiResponse);
-});
-
-export const getProdutosByCliente = asyncHandler(async (req: Request, res: Response) => {
-  const clienteId = parseInt(req.params.clienteId);
-  
-  if (isNaN(clienteId)) {
+  if (isNaN(chamadoId) || !usuarioAtual || !novoUsuarioId) {
     res.status(400).json({
       success: false,
-      message: 'ID do cliente inválido',
+      message: 'Dados inválidos para transferência',
       timestamp: new Date().toISOString()
     } as ApiResponse);
     return;
   }
 
-  const produtos = await ChamadoModel.getProdutosByCliente(clienteId);
-  
-  res.json({
-    success: true,
-    message: 'Produtos obtidos com sucesso',
-    data: produtos,
-    timestamp: new Date().toISOString()
-  } as ApiResponse);
+  if (usuarioAtual === novoUsuarioId) {
+    res.status(400).json({
+      success: false,
+      message: 'Não é possível transferir para si mesmo',
+     timestamp: new Date().toISOString()
+   } as ApiResponse);
+   return;
+ }
+
+ try {
+   // Buscar nome do usuário de destino
+   const userQuery = `SELECT col_nome FROM colaboradores WHERE col_id = ?`;
+   const userResult = await executeQuery(userQuery, [novoUsuarioId]);
+   const destinationUserName = userResult[0]?.col_nome || 'Usuário';
+   
+   // Transferir no banco
+   await AtendimentoAtivoModel.transferirChamado(chamadoId, usuarioAtual, novoUsuarioId);
+
+   // Emitir eventos via Socket - MÉTODO ATUALIZADO
+   const io = req.app.get('io');
+   if (io) {
+     // Usar novo evento específico para transferência
+     io.emit('call_transferred', {
+       chamadoId,
+       fromUserId: usuarioAtual,
+       toUserId: novoUsuarioId,
+       toUserName: destinationUserName,
+       fromUserName: req.user?.nome || 'Usuário',
+       timestamp: new Date().toISOString()
+     });
+   }
+
+   res.json({
+     success: true,
+     message: `Chamado transferido com sucesso para ${destinationUserName}`,
+     data: {
+       chamadoId,
+       novoResponsavel: destinationUserName
+     },
+     timestamp: new Date().toISOString()
+   } as ApiResponse);
+ } catch (error) {
+   console.error('Erro ao transferir chamado:', error);
+   res.status(400).json({
+     success: false,
+     message: error instanceof Error ? error.message : 'Erro ao transferir chamado',
+     timestamp: new Date().toISOString()
+   } as ApiResponse);
+ }
+});
+
+export const getUsuariosDisponiveis = asyncHandler(async (req: Request, res: Response) => {
+ try {
+   console.log('👥 Controlador: Buscando usuários disponíveis...');
+   const usuarios = await AtendimentoAtivoModel.buscarUsuariosDisponiveis();
+   
+   console.log(`👥 Controlador: Encontrados ${usuarios.length} usuários disponíveis`);
+   
+   res.json({
+     success: true,
+     message: 'Usuários disponíveis obtidos com sucesso',
+     data: usuarios,
+     timestamp: new Date().toISOString()
+   } as ApiResponse);
+ } catch (error) {
+   console.error('Erro ao buscar usuários disponíveis:', error);
+   res.status(500).json({
+     success: false,
+     message: 'Erro interno ao buscar usuários disponíveis',
+     error: process.env.NODE_ENV === 'development' ? (error as Error).message : undefined,
+     timestamp: new Date().toISOString()
+   } as ApiResponse);
+ }
+});
+
+// Endpoints auxiliares
+export const getTipos = asyncHandler(async (req: Request, res: Response) => {
+ const tipos = await ChamadoModel.getTipos();
+ 
+ res.json({
+   success: true,
+   message: 'Tipos obtidos com sucesso',
+   data: tipos,
+   timestamp: new Date().toISOString()
+ } as ApiResponse);
+});
+
+export const getStatusChamado = asyncHandler(async (req: Request, res: Response) => {
+ const status = await ChamadoModel.getStatus();
+ 
+ res.json({
+   success: true,
+   message: 'Status obtidos com sucesso',
+   data: status,
+   timestamp: new Date().toISOString()
+ } as ApiResponse);
+});
+
+export const getProdutosByCliente = asyncHandler(async (req: Request, res: Response) => {
+ const clienteId = parseInt(req.params.clienteId);
+ 
+ if (isNaN(clienteId)) {
+   res.status(400).json({
+     success: false,
+     message: 'ID do cliente inválido',
+     timestamp: new Date().toISOString()
+   } as ApiResponse);
+   return;
+ }
+
+ const produtos = await ChamadoModel.getProdutosByCliente(clienteId);
+ 
+ res.json({
+   success: true,
+   message: 'Produtos obtidos com sucesso',
+   data: produtos,
+   timestamp: new Date().toISOString()
+ } as ApiResponse);
 });
 
 export const getAcoes = asyncHandler(async (req: Request, res: Response) => {
-  const acoes = await ChamadoModel.getAcoes();
-  
-  res.json({
-    success: true,
-    message: 'Ações obtidas com sucesso',
-    data: acoes,
-    timestamp: new Date().toISOString()
-  } as ApiResponse);
+ const acoes = await ChamadoModel.getAcoes();
+ 
+ res.json({
+   success: true,
+   message: 'Ações obtidas com sucesso',
+   data: acoes,
+   timestamp: new Date().toISOString()
+ } as ApiResponse);
 });
 
 // Buscar detratores por tipo de chamado (seguindo a lógica do Python)
 export const getDetratoresByTipo = asyncHandler(async (req: Request, res: Response) => {
-  const tipoId = parseInt(req.params.tipoId);
+ const tipoId = parseInt(req.params.tipoId);
 
-  if (isNaN(tipoId)) {
-    res.status(400).json({
-      success: false,
-      message: 'ID do tipo inválido',
-      timestamp: new Date().toISOString()
-    } as ApiResponse);
-    return;
-  }
+ if (isNaN(tipoId)) {
+   res.status(400).json({
+     success: false,
+     message: 'ID do tipo inválido',
+     timestamp: new Date().toISOString()
+   } as ApiResponse);
+   return;
+ }
 
-  try {
-    console.log(`🔍 Buscando detratores para tipo ${tipoId}...`);
-    
-    // Query corrigida: busca detratores ativos (independente do indicador)
-    const query = `
-      SELECT 
-        d.dtr_id,
-        d.dtr_descricao,
-        d.dtr_tipo,
-        tc.tch_descricao,
-        d.dtr_indicador,
-        d.dtr_ativo
-      FROM detratores d
-      LEFT JOIN tipos_chamado tc ON d.dtr_tipo = tc.tch_id
-      WHERE d.dtr_ativo = 1 
-      AND (d.dtr_tipo IS NULL OR d.dtr_tipo = ?)
-      ORDER BY 
-        d.dtr_indicador DESC,  -- Críticos (1) primeiro
-        d.dtr_descricao ASC
-    `;
-    
-    const detratores = await executeQuery(query, [tipoId]);
-    
-    console.log(`✅ Encontrados ${detratores.length} detratores:`, 
-      detratores.map((d: any) => ({
-        id: d.dtr_id,
-        descricao: d.dtr_descricao,
-        indicador: d.dtr_indicador,
-        tipo: d.dtr_tipo
-      }))
-    );
-    
-    res.json({
-      success: true,
-      message: 'Detratores obtidos com sucesso',
-      data: detratores,
-      timestamp: new Date().toISOString()
-    } as ApiResponse);
-  } catch (error) {
-    console.error('Erro ao buscar detratores:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erro ao buscar detratores',
-      timestamp: new Date().toISOString()
-    } as ApiResponse);
-  }
+ try {
+   console.log(`🔍 Buscando detratores para tipo ${tipoId}...`);
+   
+   // Query corrigida: busca detratores ativos (independente do indicador)
+   const query = `
+     SELECT 
+       d.dtr_id,
+       d.dtr_descricao,
+       d.dtr_tipo,
+       tc.tch_descricao,
+       d.dtr_indicador,
+       d.dtr_ativo
+     FROM detratores d
+     LEFT JOIN tipos_chamado tc ON d.dtr_tipo = tc.tch_id
+     WHERE d.dtr_ativo = 1 
+     AND (d.dtr_tipo IS NULL OR d.dtr_tipo = ?)
+     ORDER BY 
+       d.dtr_indicador DESC,  -- Críticos (1) primeiro
+       d.dtr_descricao ASC
+   `;
+   
+   const detratores = await executeQuery(query, [tipoId]);
+   
+   console.log(`✅ Encontrados ${detratores.length} detratores:`, 
+     detratores.map((d: any) => ({
+       id: d.dtr_id,
+       descricao: d.dtr_descricao,
+       indicador: d.dtr_indicador,
+       tipo: d.dtr_tipo
+     }))
+   );
+   
+   res.json({
+     success: true,
+     message: 'Detratores obtidos com sucesso',
+     data: detratores,
+     timestamp: new Date().toISOString()
+   } as ApiResponse);
+ } catch (error) {
+   console.error('Erro ao buscar detratores:', error);
+   res.status(500).json({
+     success: false,
+     message: 'Erro ao buscar detratores',
+     timestamp: new Date().toISOString()
+   } as ApiResponse);
+ }
 });
 
 // Buscar ações por detrator (baseado na estrutura do banco)
@@ -339,178 +428,178 @@ export const getAcoesByDetrator = asyncHandler(async (req: Request, res: Respons
 const detratorId = parseInt(req.params.detratorId);
 
 if (isNaN(detratorId)) {
-  res.status(400).json({
-    success: false,
-    message: 'ID do detrator inválido',
-    timestamp: new Date().toISOString()
-  } as ApiResponse);
-  return;
+ res.status(400).json({
+   success: false,
+   message: 'ID do detrator inválido',
+   timestamp: new Date().toISOString()
+ } as ApiResponse);
+ return;
 }
 
 try {
-  const query = `
-    SELECT ach_id, ach_descricao, ach_detrator
-    FROM acoes_chamados 
-    WHERE ach_detrator = ?
-    ORDER BY ach_descricao ASC
-  `;
-  
-  const acoes = await executeQuery(query, [detratorId]);
-  
-  res.json({
-    success: true,
-    message: 'Ações obtidas com sucesso',
-    data: acoes,
-    timestamp: new Date().toISOString()
-  } as ApiResponse);
+ const query = `
+   SELECT ach_id, ach_descricao, ach_detrator
+   FROM acoes_chamados 
+   WHERE ach_detrator = ?
+   ORDER BY ach_descricao ASC
+ `;
+ 
+ const acoes = await executeQuery(query, [detratorId]);
+ 
+ res.json({
+   success: true,
+   message: 'Ações obtidas com sucesso',
+   data: acoes,
+   timestamp: new Date().toISOString()
+ } as ApiResponse);
 } catch (error) {
-  console.error('Erro ao buscar ações:', error);
-  res.status(500).json({
-    success: false,
-    message: 'Erro ao buscar ações',
-    timestamp: new Date().toISOString()
-  } as ApiResponse);
+ console.error('Erro ao buscar ações:', error);
+ res.status(500).json({
+   success: false,
+   message: 'Erro ao buscar ações',
+   timestamp: new Date().toISOString()
+ } as ApiResponse);
 }
 });
 
 // Finalizar chamado COM detrator e descrição (seguindo lógica do closeCall)
 export const finalizarChamado = asyncHandler(async (req: AuthRequest, res: Response) => {
-  const id = parseInt(req.params.id);
-  const { detrator_id, descricao_atendimento } = req.body;
-  
-  console.log('🔍 Backend - finalizarChamado chamado com:');
-  console.log('- ID:', id, typeof id);
-  console.log('- Detrator ID:', detrator_id, typeof detrator_id);
-  console.log('- Descrição:', descricao_atendimento, typeof descricao_atendimento);
-  
-  if (isNaN(id)) {
-    res.status(400).json({
-      success: false,
-      message: 'ID do chamado é inválido',
-      timestamp: new Date().toISOString()
-    } as ApiResponse);
-    return;
-  }
-  
-  if (!detrator_id) {
-    res.status(400).json({
-      success: false,
-      message: 'Detrator é obrigatório',
-      timestamp: new Date().toISOString()
-    } as ApiResponse);
-    return;
-  }
+ const id = parseInt(req.params.id);
+ const { detrator_id, descricao_atendimento } = req.body;
+ 
+ console.log('🔍 Backend - finalizarChamado chamado com:');
+ console.log('- ID:', id, typeof id);
+ console.log('- Detrator ID:', detrator_id, typeof detrator_id);
+ console.log('- Descrição:', descricao_atendimento, typeof descricao_atendimento);
+ 
+ if (isNaN(id)) {
+   res.status(400).json({
+     success: false,
+     message: 'ID do chamado é inválido',
+     timestamp: new Date().toISOString()
+   } as ApiResponse);
+   return;
+ }
+ 
+ if (!detrator_id) {
+   res.status(400).json({
+     success: false,
+     message: 'Detrator é obrigatório',
+     timestamp: new Date().toISOString()
+   } as ApiResponse);
+   return;
+ }
 
-  // Validar descrição do atendimento
-  if (!descricao_atendimento || typeof descricao_atendimento !== 'string') {
-    res.status(400).json({
-      success: false,
-      message: 'Descrição do atendimento é obrigatória',
-      timestamp: new Date().toISOString()
-    } as ApiResponse);
-    return;
-  }
+ // Validar descrição do atendimento
+ if (!descricao_atendimento || typeof descricao_atendimento !== 'string') {
+   res.status(400).json({
+     success: false,
+     message: 'Descrição do atendimento é obrigatória',
+     timestamp: new Date().toISOString()
+   } as ApiResponse);
+   return;
+ }
 
-  const descricao = descricao_atendimento.trim();
-  if (descricao.length === 0) {
-    res.status(400).json({
-      success: false,
-      message: 'Descrição do atendimento não pode estar vazia',
-      timestamp: new Date().toISOString()
-    } as ApiResponse);
-    return;
-  }
+ const descricao = descricao_atendimento.trim();
+ if (descricao.length === 0) {
+   res.status(400).json({
+     success: false,
+     message: 'Descrição do atendimento não pode estar vazia',
+     timestamp: new Date().toISOString()
+   } as ApiResponse);
+   return;
+ }
 
-  if (descricao.length > 250) {
-    res.status(400).json({
-      success: false,
-      message: 'Descrição do atendimento deve ter no máximo 250 caracteres',
-      timestamp: new Date().toISOString()
-    } as ApiResponse);
-    return;
-  }
+ if (descricao.length > 250) {
+   res.status(400).json({
+     success: false,
+     message: 'Descrição do atendimento deve ter no máximo 250 caracteres',
+     timestamp: new Date().toISOString()
+   } as ApiResponse);
+   return;
+ }
 
-  try {
-    console.log('✅ Validações passaram, finalizando chamado...');
-    
-    // Usar a nova função que segue a lógica exata do Python
-    await AtendimentoAtivoModel.finalizarComDetrator(id, detrator_id, descricao);
+ try {
+   console.log('✅ Validações passaram, finalizando chamado...');
+   
+   // Usar a nova função que segue a lógica exata do Python
+   await AtendimentoAtivoModel.finalizarComDetrator(id, detrator_id, descricao);
 
-    console.log('✅ Chamado finalizado com sucesso');
+   console.log('✅ Chamado finalizado com sucesso');
 
-    // NOVO: Emitir evento via WebSocket para todos os usuários
-    const io = req.app.get('io');
-    if (io) {
-      console.log(`📡 Emitindo evento de finalização para chamado ${id}`);
-      io.emit('user_finished_attendance', {
-        chamadoId: id,
-        userId: req.user?.id
-      });
-    }
+   // NOVO: Emitir evento via WebSocket para todos os usuários
+   const io = req.app.get('io');
+   if (io) {
+     console.log(`📡 Emitindo evento de finalização para chamado ${id}`);
+     io.emit('user_finished_attendance', {
+       chamadoId: id,
+       userId: req.user?.id
+     });
+   }
 
-    res.json({
-      success: true,
-      message: 'Chamado finalizado com sucesso',
-      timestamp: new Date().toISOString()
-    } as ApiResponse);
-  } catch (error) {
-    console.error('❌ Erro ao finalizar chamado:', error);
-    res.status(400).json({
-      success: false,
-      message: error instanceof Error ? error.message : 'Erro ao finalizar chamado',
-      timestamp: new Date().toISOString()
-    } as ApiResponse);
-  }
+   res.json({
+     success: true,
+     message: 'Chamado finalizado com sucesso',
+     timestamp: new Date().toISOString()
+   } as ApiResponse);
+ } catch (error) {
+   console.error('❌ Erro ao finalizar chamado:', error);
+   res.status(400).json({
+     success: false,
+     message: error instanceof Error ? error.message : 'Erro ao finalizar chamado',
+     timestamp: new Date().toISOString()
+   } as ApiResponse);
+ }
 });
 
 // Relatório de detratores
 export const getRelatorioDetratores = asyncHandler(async (req: Request, res: Response) => {
-  const { dataInicio, dataFim } = req.query;
+ const { dataInicio, dataFim } = req.query;
 
-  if (!dataInicio || !dataFim) {
-    res.status(400).json({
-      success: false,
-      message: 'Data de início e fim são obrigatórias',
-      timestamp: new Date().toISOString()
-    } as ApiResponse);
-    return;
-  }
+ if (!dataInicio || !dataFim) {
+   res.status(400).json({
+     success: false,
+     message: 'Data de início e fim são obrigatórias',
+     timestamp: new Date().toISOString()
+   } as ApiResponse);
+   return;
+ }
 
-  try {
-    const query = `
-      SELECT 
-        d.dtr_id,
-        d.dtr_descricao as detrator_descricao,
-        d.dtr_indicador,
-        tc.tch_descricao as tipo_chamado,
-        COUNT(DISTINCT c.cha_id) as total_ocorrencias,
-        COUNT(DISTINCT ac.ach_id) as total_acoes_distintas,
-        AVG(TIMESTAMPDIFF(MINUTE, c.cha_data_hora_abertura, c.cha_data_hora_termino)) as tempo_medio_resolucao,
-        GROUP_CONCAT(DISTINCT ac.ach_descricao SEPARATOR '; ') as acoes_utilizadas
-      FROM chamados c
-      INNER JOIN acoes_chamados ac ON c.cha_acao = ac.ach_id
-      INNER JOIN detratores d ON ac.ach_detrator = d.dtr_id
-      LEFT JOIN tipos_chamado tc ON d.dtr_tipo = tc.tch_id
-      WHERE c.cha_status = 3 
-      AND DATE(c.cha_data_hora_termino) BETWEEN ? AND ?
-      GROUP BY d.dtr_id, d.dtr_descricao, d.dtr_indicador, tc.tch_descricao
-      ORDER BY total_ocorrencias DESC, d.dtr_indicador DESC
-    `;
-    
-    const relatorio = await executeQuery(query, [dataInicio, dataFim]);
-    
-    res.json({
-      success: true,
-      message: 'Relatório de detratores obtido com sucesso',
-      data: relatorio,
-      timestamp: new Date().toISOString()
-    } as ApiResponse);
-  } catch (error) {
-    console.error('Erro ao gerar relatório de detratores:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erro ao gerar relatório',
-      timestamp: new Date().toISOString()
-    } as ApiResponse);
-  }
+ try {
+   const query = `
+     SELECT 
+       d.dtr_id,
+       d.dtr_descricao as detrator_descricao,
+       d.dtr_indicador,
+       tc.tch_descricao as tipo_chamado,
+       COUNT(DISTINCT c.cha_id) as total_ocorrencias,
+       COUNT(DISTINCT ac.ach_id) as total_acoes_distintas,
+       AVG(TIMESTAMPDIFF(MINUTE, c.cha_data_hora_abertura, c.cha_data_hora_termino)) as tempo_medio_resolucao,
+       GROUP_CONCAT(DISTINCT ac.ach_descricao SEPARATOR '; ') as acoes_utilizadas
+     FROM chamados c
+     INNER JOIN acoes_chamados ac ON c.cha_acao = ac.ach_id
+     INNER JOIN detratores d ON ac.ach_detrator = d.dtr_id
+     LEFT JOIN tipos_chamado tc ON d.dtr_tipo = tc.tch_id
+     WHERE c.cha_status = 3 
+     AND DATE(c.cha_data_hora_termino) BETWEEN ? AND ?
+     GROUP BY d.dtr_id, d.dtr_descricao, d.dtr_indicador, tc.tch_descricao
+     ORDER BY total_ocorrencias DESC, d.dtr_indicador DESC
+   `;
+   
+   const relatorio = await executeQuery(query, [dataInicio, dataFim]);
+   
+   res.json({
+     success: true,
+     message: 'Relatório de detratores obtido com sucesso',
+     data: relatorio,
+     timestamp: new Date().toISOString()
+   } as ApiResponse);
+ } catch (error) {
+   console.error('Erro ao gerar relatório de detratores:', error);
+   res.status(500).json({
+     success: false,
+     message: 'Erro ao gerar relatório',
+     timestamp: new Date().toISOString()
+   } as ApiResponse);
+ }
 });

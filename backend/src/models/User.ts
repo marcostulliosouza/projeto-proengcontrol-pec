@@ -1,6 +1,7 @@
 import { executeQuery } from '../config/database';
 import { User } from '../types';
 import crypto from 'crypto';
+
 export class UserModel {
   // Buscar usuário por login
   static async findByLogin(login: string): Promise<User | null> {
