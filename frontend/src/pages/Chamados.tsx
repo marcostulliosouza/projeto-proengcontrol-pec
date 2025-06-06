@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, Table, Button, Input, Select, Pagination, Modal } from '../components/ui';
 import { ChamadoService, type TipoChamado, type StatusChamado, type Cliente } from '../services/chamadoService';
-import { useSocket } from '../contexts/SocketContext';
+import { useSocket } from '../hooks/useSocket';
 import { useChamadosRealTime } from '../hooks/useChamadosRealTime';
 import { useGlobalAttendance } from '../hooks/useGlobalAttendance';
 import type { Chamado, FilterState, PaginationInfo } from '../types';
@@ -655,7 +655,7 @@ const Chamados: React.FC = () => {
         isOpen={detailModalOpen}
         onClose={handleCloseModal}
         title={`Chamado #${selectedChamado?.cha_id}`}
-        size="xl"
+        size="lg"
       >
         {selectedChamado && (
           <div className="max-h-[80vh] overflow-y-auto space-y-6">
@@ -883,65 +883,65 @@ const Chamados: React.FC = () => {
 
                   {/* Finalização - TAMBÉM CORRIGIDA */}
                   {selectedChamado.cha_status === 3 && (
-  <div className="flex items-start space-x-4">
-    <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center border-4 border-white shadow-sm" style={{zIndex: 10, position: 'relative'}}>
-      <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    </div>
-    <div className="flex-1 min-w-0">
-      <div className="flex items-center justify-between">
-        <h4 className="text-sm font-semibold text-slate-900">Chamado Finalizado</h4>
-        {selectedChamado.cha_data_hora_termino && (
-          <span className="text-xs text-slate-500">
-            {new Date(selectedChamado.cha_data_hora_termino).toLocaleString('pt-BR')}
-          </span>
-        )}
-      </div>
-      
-      {/* Quem Finalizou - CORRIGIDO */}
-      {(() => {
-        // Para chamados finalizados, usar colaborador_nome diretamente
-        const colaboradorNome = selectedChamado.colaborador_nome;
-        
-        if (colaboradorNome && String(colaboradorNome).trim()) {
-          const isMyFinalization = selectedChamado.atc_colaborador === currentAttendance?.userId;
-          
-          return (
-            <div className="flex items-center space-x-2 mt-1">
-              <div className="w-6 h-6 bg-green-100 text-green-700 rounded-full flex items-center justify-center text-xs font-semibold">
-                {String(colaboradorNome).charAt(0).toUpperCase()}
-              </div>
-              <span className="text-sm font-medium text-slate-700">
-                Finalizado por {String(colaboradorNome)}
-              </span>
-              {isMyFinalization && (
-                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
-                  Você
-                </span>
-              )}
-            </div>
-          );
-        }
-        
-        // Debug para casos problemáticos
-        console.log('🔍 Debug - Finalização sem responsável:', {
-          colaborador_nome: selectedChamado.colaborador_nome,
-          atc_colaborador: selectedChamado.atc_colaborador,
-          cha_acao: selectedChamado.cha_acao,
-          acao_descricao: selectedChamado.acao_descricao
-        });
-        
-        return (
-          <div className="text-sm text-slate-500 mt-1">
-            <span className="bg-yellow-100 text-yellow-700 px-2 py-1 rounded text-xs">
-              ⚠️ Responsável pela finalização não identificado
-            </span>
-          </div>
-        );
-      })()}
-    </div>
-  </div>
+                  <div className="flex items-start space-x-4">
+                    <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center border-4 border-white shadow-sm" style={{zIndex: 10, position: 'relative'}}>
+                      <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-semibold text-slate-900">Chamado Finalizado</h4>
+                        {selectedChamado.cha_data_hora_termino && (
+                          <span className="text-xs text-slate-500">
+                            {new Date(selectedChamado.cha_data_hora_termino).toLocaleString('pt-BR')}
+                          </span>
+                        )}
+                      </div>
+                      
+                      {/* Quem Finalizou - CORRIGIDO */}
+                      {(() => {
+                        // Para chamados finalizados, usar colaborador_nome diretamente
+                        const colaboradorNome = selectedChamado.colaborador_nome;
+                        
+                        if (colaboradorNome && String(colaboradorNome).trim()) {
+                          const isMyFinalization = selectedChamado.atc_colaborador === currentAttendance?.userId;
+                          
+                          return (
+                            <div className="flex items-center space-x-2 mt-1">
+                              <div className="w-6 h-6 bg-green-100 text-green-700 rounded-full flex items-center justify-center text-xs font-semibold">
+                                {String(colaboradorNome).charAt(0).toUpperCase()}
+                              </div>
+                              <span className="text-sm font-medium text-slate-700">
+                                Finalizado por {String(colaboradorNome)}
+                              </span>
+                              {isMyFinalization && (
+                                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
+                                  Você
+                                </span>
+                              )}
+                            </div>
+                          );
+                        }
+                        
+                        // Debug para casos problemáticos
+                        console.log('🔍 Debug - Finalização sem responsável:', {
+                          colaborador_nome: selectedChamado.colaborador_nome,
+                          atc_colaborador: selectedChamado.atc_colaborador,
+                          cha_acao: selectedChamado.cha_acao,
+                          acao_descricao: selectedChamado.acao_descricao
+                        });
+                        
+                        return (
+                          <div className="text-sm text-slate-500 mt-1">
+                            <span className="bg-yellow-100 text-yellow-700 px-2 py-1 rounded text-xs">
+                              ⚠️ Responsável pela finalização não identificado
+                            </span>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
 )}
                 </div>
               </div>

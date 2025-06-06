@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useSocket } from '../contexts/SocketContext';
+import { useSocket } from '../hooks/useSocket';
 import { ChamadoService } from '../services/chamadoService';
 import type { Chamado } from '../types';
 

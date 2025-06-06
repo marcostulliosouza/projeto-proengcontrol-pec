@@ -1,3 +1,4 @@
+// server.ts - OTIMIZADO
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -7,32 +8,35 @@ import { createServer } from 'http';
 import { Server as SocketServer } from 'socket.io';
 import 'module-alias/register';
 
-// Importar rotas e middlewares
 import authRoutes from './routes/authRoutes';
 import dispositivoRoutes from './routes/dispositivoRoutes';
 import chamadoRoutes from './routes/chamadoRoutes';
 
-import { testConnection } from './config/database';
+import { executeQuery, testConnection } from './config/database';
 import { errorHandler } from './middlewares/errorHandler';
 import { AtendimentoAtivoModel } from './models/AtendimentoAtivo';
 
-// Configurar variáveis de ambiente
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 const API_PREFIX = process.env.API_PREFIX || '/api/v1';
 
-// Criar servidor HTTP
 const server = createServer(app);
 
-// Configurar Socket.IO
+// SOCKET.IO MELHORADO
 const io = new SocketServer(server, {
   cors: {
     origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
     methods: ['GET', 'POST'],
     credentials: true
-  }
+  },
+  // NOVAS CONFIGURAÇÕES DE PERFORMANCE
+  pingTimeout: 60000,
+  pingInterval: 25000,
+  upgradeTimeout: 10000,
+  maxHttpBufferSize: 1e6,
+  transports: ['websocket', 'polling']
 });
 
 app.set('io', io);
@@ -40,7 +44,6 @@ app.set('io', io);
 // Middleware de segurança
 app.use(helmet());
 
-// Configuração do CORS
 app.use(cors({
   origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
@@ -48,21 +51,44 @@ app.use(cors({
   credentials: true
 }));
 
-// Middleware para parsing JSON
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Logging
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 } else {
   app.use(morgan('combined'));
 }
 
-// Store para usuários conectados
-const activeUsers = new Map();
+// STORE OTIMIZADO para usuários conectados
+const activeUsers = new Map<string, {
+  userId: number;
+  userName: string;
+  socketId: string;
+  connectedAt: Date;
+  lastSeen: Date;
+  userLogin: string;
+  userCategory: number;
+}>();
 
-// Função para broadcast de atendimentos ativos
+// HEARTBEAT para detectar conexões mortas
+const heartbeatInterval = setInterval(() => {
+  const now = new Date();
+  const staleConnections = [];
+  
+  for (const [socketId, user] of activeUsers) {
+    if (now.getTime() - user.lastSeen.getTime() > 90000) { // 90 segundos
+      staleConnections.push(socketId);
+    }
+  }
+  
+  staleConnections.forEach(socketId => {
+    console.log(`🧹 Removendo conexão inativa: ${socketId}`);
+    activeUsers.delete(socketId);
+  });
+}, 30000); // A cada 30 segundos
+
+// Função otimizada para broadcast
 const broadcastActiveAttendances = async () => {
   try {
     const atendimentos = await AtendimentoAtivoModel.listarAtivos();
@@ -73,12 +99,76 @@ const broadcastActiveAttendances = async () => {
   }
 };
 
-// Timer para atualizar tempos automaticamente a cada 5 segundos
+// Função para obter usuários realmente online
+const getRealOnlineUsers = async () => {
+  try {
+    const onlineUserIds = Array.from(activeUsers.values()).map(user => user.userId);
+    
+    if (onlineUserIds.length === 0) {
+      return [];
+    }
+    
+    // Query para buscar dados completos dos usuários online
+    const placeholders = onlineUserIds.map(() => '?').join(',');
+    const query = `
+      SELECT 
+        col.col_id,
+        col.col_nome,
+        col.col_categoria,
+        cac.cac_descricao as categoria_nome,
+        col.col_login,
+        col.col_ativo
+      FROM colaboradores col
+      LEFT JOIN categorias_colaboradores cac ON col.col_categoria = cac.cac_id
+      WHERE col.col_ativo = 1
+      AND col.col_id IN (${placeholders})
+      AND col.col_id NOT IN (
+        SELECT DISTINCT atc_colaborador 
+        FROM atendimentos_chamados 
+        WHERE atc_data_hora_termino IS NULL
+        AND atc_data_hora_inicio <= NOW()
+      )
+      ORDER BY col.col_nome ASC
+    `;
+    
+    const usuarios = await executeQuery(query, onlineUserIds);
+    const usuariosArray = Array.isArray(usuarios) ? usuarios : [];
+    
+    // Enriquecer com dados de socket
+    const usuariosComSocket = usuariosArray.map(usuario => {
+      const socketUser = Array.from(activeUsers.values())
+        .find(su => su.userId === usuario.col_id);
+      
+      return {
+        ...usuario,
+        online: true,
+        socketId: socketUser?.socketId,
+        connectedAt: socketUser?.connectedAt,
+        lastSeen: socketUser?.lastSeen
+      };
+    });
+    
+    console.log(`✅ Usuários realmente online e disponíveis: ${usuariosComSocket.length}`);
+    return usuariosComSocket;
+    
+  } catch (error) {
+    console.error('❌ Erro ao buscar usuários online reais:', error);
+    return [];
+  }
+};
+
+// Timer otimizado para sync
+let lastSyncTime = 0;
+const SYNC_INTERVAL = 5000;
+
 setInterval(async () => {
   try {
+    const now = Date.now();
+    if (now - lastSyncTime < SYNC_INTERVAL) return;
+    
+    lastSyncTime = now;
     const atendimentos = await AtendimentoAtivoModel.listarAtivos();
     
-    // Broadcast apenas os timers atualizados
     const timersData = atendimentos.map(atendimento => ({
       chamadoId: atendimento.atc_chamado,
       seconds: atendimento.tempo_decorrido || 0,
@@ -92,9 +182,9 @@ setInterval(async () => {
   } catch (error) {
     console.error('Erro na sincronização automática:', error);
   }
-}, 5000); // A cada 5 segundos
+}, SYNC_INTERVAL);
 
-// Limpeza automática a cada 2 minutos
+// Limpeza automática otimizada
 setInterval(async () => {
   try {
     await AtendimentoAtivoModel.limparRegistrosOrfaos();
@@ -104,21 +194,42 @@ setInterval(async () => {
   }
 }, 120000);
 
-// Configuração do WebSocket
+// SOCKET HANDLERS OTIMIZADOS
 io.on('connection', (socket) => {
   console.log('🔌 Cliente conectado:', socket.id);
   
-  // Usuário se autentica
+  // Heartbeat atualizado
+  socket.on('pong', () => {
+    const user = activeUsers.get(socket.id);
+    if (user) {
+      user.lastSeen = new Date();
+    }
+  });
+
   socket.on('authenticate', async (userData) => {
     console.log('🔐 Usuário autenticando:', userData);
+    
+    // Limpar conexões antigas do mesmo usuário
+    for (const [socketId, user] of activeUsers) {
+      if (user.userId === userData.id && socketId !== socket.id) {
+        console.log(`🧹 Removendo conexão antiga do usuário ${userData.nome}: ${socketId}`);
+        activeUsers.delete(socketId);
+        io.to(socketId).emit('force_disconnect', 'Nova conexão detectada');
+      }
+    }
+    
+    // ATUALIZADO: Incluir mais dados do usuário
     activeUsers.set(socket.id, {
-      ...userData,
+      userId: userData.id,
+      userName: userData.nome,
+      userLogin: userData.login,
+      userCategory: userData.categoria,
       socketId: socket.id,
-      connectedAt: new Date()
+      connectedAt: new Date(),
+      lastSeen: new Date()
     });
     
     try {
-      // Verificar se usuário já está em atendimento
       const atendimentoAtivo = await AtendimentoAtivoModel.buscarPorColaborador(userData.id);
       
       if (atendimentoAtivo) {
@@ -130,15 +241,11 @@ io.on('connection', (socket) => {
           startTime: atendimentoAtivo.atc_data_hora_inicio,
           elapsedSeconds: atendimentoAtivo.tempo_decorrido || 0
         });
-      } else {
-        console.log(`ℹ️ Usuário ${userData.nome} não tem atendimento ativo`);
       }
 
-      // Enviar todos os atendimentos ativos para sincronizar
       const atendimentos = await AtendimentoAtivoModel.listarAtivos();
       socket.emit('active_attendances', atendimentos);
       
-      // Enviar timers atuais
       const timersData = atendimentos.map(atendimento => ({
         chamadoId: atendimento.atc_chamado,
         seconds: atendimento.tempo_decorrido || 0,
@@ -156,70 +263,17 @@ io.on('connection', (socket) => {
     socket.broadcast.emit('user_connected', userData);
   });
 
-  // Iniciar atendimento COM VERIFICAÇÃO RIGOROSA
-  socket.on('start_attendance', async (data) => {
-    const { chamadoId, userId, userName } = data;
+  socket.on('disconnect', () => {
+    console.log('🔌 Cliente desconectado:', socket.id);
     
-    try {
-      console.log(`🚀 Socket: Tentativa de iniciar atendimento - Chamado ${chamadoId}, Usuário ${userId} (${userName})`);
-      
-      // Usar a nova função que faz verificação rigorosa
-      await AtendimentoAtivoModel.iniciar(chamadoId, userId);
-      
-      const attendanceData = {
-        chamadoId,
-        userId,
-        userName,
-        socketId: socket.id,
-        startTime: new Date().toISOString()
-      };
-      
-      // Emitir para o usuário que iniciou
-      socket.emit('attendance_started', attendanceData);
-      
-      // Emitir para TODOS os outros usuários
-      socket.broadcast.emit('user_started_attendance', attendanceData);
-      
-      console.log(`✅ Socket: Atendimento iniciado com sucesso - Chamado ${chamadoId} por ${userName}`);
-      
-      // Broadcast atualização geral
-      await broadcastActiveAttendances();
-      
-    } catch (error) {
-      console.error(`❌ Socket: Erro ao iniciar atendimento - ${error}`);
-      socket.emit('attendance_blocked', { 
-        reason: (error as Error)?.message || 'Não foi possível iniciar atendimento' 
-      });
+    const user = activeUsers.get(socket.id);
+    if (user) {
+      console.log(`👤 Usuário ${user.userName} desconectou`);
+      activeUsers.delete(socket.id);
+      socket.broadcast.emit('user_disconnected', user);
     }
   });
 
-  // Finalizar atendimento
-  socket.on('finish_attendance', async (data) => {
-    const { userId } = data;
-    
-    try {
-      const atendimentoAtivo = await AtendimentoAtivoModel.buscarPorColaborador(userId);
-      
-      if (atendimentoAtivo) {
-        console.log(`🏁 Socket: Finalizando atendimento do chamado ${atendimentoAtivo.atc_chamado}`);
-        
-        // Emitir ANTES de finalizar para todos os usuários
-        io.emit('user_finished_attendance', {
-          userId,
-          chamadoId: atendimentoAtivo.atc_chamado
-        });
-
-        // Emitir ANTES de finalizar
-        socket.emit('attendance_finished');
-        
-        await broadcastActiveAttendances();
-      }
-    } catch (error) {
-      console.error('Erro ao finalizar atendimento via socket:', error);
-    }
-  });
-
-  // Cancelar atendimento
   socket.on('cancel_attendance', async (data) => {
     const { chamadoId, userId } = data;
     
@@ -228,7 +282,6 @@ io.on('connection', (socket) => {
       
       await AtendimentoAtivoModel.cancelar(chamadoId);
       
-      // Emitir eventos IMEDIATAMENTE e para todos
       socket.emit('attendance_cancelled');
       io.emit('user_cancelled_attendance', {
         userId,
@@ -237,7 +290,6 @@ io.on('connection', (socket) => {
       
       console.log(`✅ Socket: Atendimento ${chamadoId} cancelado e eventos emitidos`);
       
-      // Broadcast atualização geral
       setTimeout(async () => {
         await broadcastActiveAttendances();
       }, 500);
@@ -249,30 +301,85 @@ io.on('connection', (socket) => {
       });
     }
   });
-
-  // Solicitar atendimentos ativos
-  socket.on('get_active_attendances', async () => {
+  
+  // NOVO: Handler específico para transferência via socket
+  socket.on('transfer_call_socket', async (data) => {
+    const { chamadoId, fromUserId, toUserId } = data;
+    
     try {
-      const atendimentos = await AtendimentoAtivoModel.listarAtivos();
-      socket.emit('active_attendances', atendimentos);
+      console.log(`🔄 Socket: Transferindo chamado ${chamadoId}: ${fromUserId} → ${toUserId}`);
+      
+      // Buscar nomes dos usuários
+      const [fromUser, toUser] = await Promise.all([
+        executeQuery('SELECT col_nome FROM colaboradores WHERE col_id = ?', [fromUserId]),
+        executeQuery('SELECT col_nome FROM colaboradores WHERE col_id = ?', [toUserId])
+      ]);
+      
+      const fromUserName = fromUser[0]?.col_nome || 'Usuário';
+      const toUserName = toUser[0]?.col_nome || 'Usuário';
+      
+      // Fazer a transferência no banco
+      await AtendimentoAtivoModel.transferirChamado(chamadoId, fromUserId, toUserId);
+      
+      const transferData = {
+        chamadoId,
+        fromUserId,
+        toUserId,
+        fromUserName,
+        toUserName,
+        timestamp: new Date().toISOString()
+      };
+      
+      // Para o usuário que transferiu - enviar confirmação
+      socket.emit('transfer_completed', transferData);
+      
+      // Para o usuário que recebeu - encontrar socket e notificar
+      const recipientSocket = Array.from(activeUsers.entries())
+        .find(([_, user]) => user.userId === toUserId);
+      
+      if (recipientSocket) {
+        const [recipientSocketId] = recipientSocket;
+        
+        // Notificar que recebeu transferência
+        io.to(recipientSocketId).emit('call_transferred_to_you', transferData);
+        
+        // Notificar que está em atendimento
+        io.to(recipientSocketId).emit('user_in_attendance', {
+          chamadoId,
+          userId: toUserId,
+          userName: toUserName,
+          startTime: transferData.timestamp
+        });
+        
+        console.log(`✅ Notificação enviada para usuário ${toUserName} (${recipientSocketId})`);
+      } else {
+        console.log(`⚠️ Socket do usuário ${toUserName} não encontrado`);
+      }
+      
+      // Para todos os outros - atualização geral
+      socket.broadcast.emit('call_transferred', transferData);
+      
+      console.log(`✅ Socket: Transferência ${chamadoId} concluída com sucesso`);
+      
+      // Broadcast geral após um tempo
+      setTimeout(async () => {
+        await broadcastActiveAttendances();
+      }, 1000);
+      
     } catch (error) {
-      console.error('Erro ao buscar atendimentos ativos:', error);
+      console.error('❌ Socket: Erro ao transferir:', error);
+      socket.emit('transfer_error', {
+        message: error instanceof Error ? error.message : 'Erro ao transferir chamado'
+      });
     }
   });
+});
 
-  // Desconexão
-  socket.on('disconnect', () => {
-    console.log('🔌 Cliente desconectado:', socket.id);
-    
-    const user = activeUsers.get(socket.id);
-    if (user) {
-      console.log(`👤 Usuário ${user.nome} desconectou`);
-      activeUsers.delete(socket.id);
-      socket.broadcast.emit('user_disconnected', user);
-    }
-    
-    // Atendimentos permanecem no banco, não são removidos na desconexão
-  });
+
+// Cleanup na finalização do processo
+process.on('SIGTERM', () => {
+  clearInterval(heartbeatInterval);
+  console.log('🧹 Limpeza concluída');
 });
 
 // Health check endpoint
@@ -283,11 +390,12 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     version: '1.0.0',
     environment: process.env.NODE_ENV,
-    activeConnections: activeUsers.size
+    activeConnections: activeUsers.size,
+    memoryUsage: process.memoryUsage()
   });
 });
 
-// Rota principal da API
+// Resto do código mantido igual...
 app.get(API_PREFIX, (req, res) => {
   res.json({
     success: true,
@@ -297,22 +405,17 @@ app.get(API_PREFIX, (req, res) => {
       auth: `${API_PREFIX}/auth`,
       dispositivos: `${API_PREFIX}/dispositivos`,
       chamados: `${API_PREFIX}/chamados`,
-      manutencao: `${API_PREFIX}/manutencao`,
-      dashboard: `${API_PREFIX}/dashboard`
     },
     timestamp: new Date().toISOString()
   });
 });
 
-// Rotas da API
 app.use(`${API_PREFIX}/auth`, authRoutes);
 app.use(`${API_PREFIX}/dispositivos`, dispositivoRoutes);
 app.use(`${API_PREFIX}/chamados`, chamadoRoutes);
 
-// Middleware de tratamento de erros (deve ser o último)
 app.use(errorHandler);
 
-// 404 handler
 app.use('*', (req, res) => {
   res.status(404).json({
     success: false,
@@ -321,10 +424,8 @@ app.use('*', (req, res) => {
   });
 });
 
-// Inicializar servidor
 const startServer = async () => {
   try {
-    // Testar conexão com banco de dados
     const dbConnected = await testConnection();
     
     if (!dbConnected) {
@@ -332,11 +433,9 @@ const startServer = async () => {
       process.exit(1);
     }
 
-    // Limpeza inicial de registros órfãos
     await AtendimentoAtivoModel.limparRegistrosOrfaos();
     console.log('🧹 Limpeza inicial de registros órfãos concluída');
 
-    // Iniciar servidor
     server.listen(PORT, () => {
       console.log('🚀 ProEngControl - PEC API');
       console.log(`📡 Servidor rodando na porta ${PORT}`);
@@ -353,7 +452,6 @@ const startServer = async () => {
   }
 };
 
-// Tratamento de erros não capturados
 process.on('uncaughtException', (error) => {
   console.error('Uncaught Exception:', error);
   process.exit(1);
@@ -364,7 +462,6 @@ process.on('unhandledRejection', (reason, promise) => {
   process.exit(1);
 });
 
-// Iniciar aplicação
 startServer();
 
 export default app;

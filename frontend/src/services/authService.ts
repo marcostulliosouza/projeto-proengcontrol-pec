@@ -15,7 +15,15 @@ export class AuthService {
     // Salvar token e usuário no localStorage
     if (response.token) {
       localStorage.setItem('token', response.token);
-      localStorage.setItem('user', JSON.stringify(response.user));
+      // Normalizar usuário antes de salvar
+      const normalizedUser: User = {
+        id: response.user.id,
+        nome: response.user.nome,
+        login: response.user.login,
+        categoria: response.user.categoria,
+        categoriaNome: response.user.categoriaNome
+      };
+      localStorage.setItem('user', JSON.stringify(normalizedUser));
     }
     
     return response;
@@ -37,7 +45,17 @@ export class AuthService {
 
   // Obter dados do usuário atual
   static async me(): Promise<User> {
-    return await ApiService.get<User>('/auth/me');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const response = await ApiService.get<any>('/auth/me');
+    
+    // Normalizar resposta do backend para frontend
+    return {
+      id: response.id,
+      nome: response.nome,
+      login: response.login,
+      categoria: response.categoria,
+      categoriaNome: response.categoriaNome
+    };
   }
 
   // Verificar se usuário está logado
@@ -57,7 +75,15 @@ export class AuthService {
     const userString = localStorage.getItem('user');
     if (userString) {
       try {
-        return JSON.parse(userString) as User;
+        const userData = JSON.parse(userString);
+        // Normalizar para garantir consistência
+        return {
+          id: userData.id || userData.col_id,
+          nome: userData.nome || userData.col_nome,
+          login: userData.login || userData.col_login,
+          categoria: userData.categoria || userData.col_categoria,
+          categoriaNome: userData.categoriaNome
+        };
       } catch (error) {
         console.error('Erro ao parsear usuário do localStorage:', error);
         return null;

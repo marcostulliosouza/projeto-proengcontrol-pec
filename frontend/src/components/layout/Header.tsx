@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { useGlobalAttendance } from '../../hooks/useGlobalAttendance'; // NOVO
-import { useNavigate } from 'react-router-dom'; // NOVO
+import { useGlobalAttendance } from '../../hooks/useGlobalAttendance';
+import { useNavigate } from 'react-router-dom';
 import Button from '../ui/Button';
 
 interface HeaderProps {
@@ -10,8 +10,8 @@ interface HeaderProps {
 
 const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
   const { logout, state } = useAuth();
-  const { isInAttendance, attendanceChamado } = useGlobalAttendance(); // NOVO
-  const navigate = useNavigate(); // NOVO
+  const { isInAttendance, attendanceChamado } = useGlobalAttendance();
+  const navigate = useNavigate();
 
   const handleLogout = async () => {
     if (window.confirm('Tem certeza que deseja sair?')) {
@@ -33,7 +33,6 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
             </svg>
           </button>
           
-          {/* Breadcrumb ou título da página */}
           <div className="hidden lg:block">
             <h2 className="text-xl font-semibold text-secondary-900">
               Dashboard
@@ -43,7 +42,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
 
         {/* Actions */}
         <div className="flex items-center space-x-4">
-          {/* NOVO: Indicador Global de Atendimento */}
+          {/* Indicador de Atendimento Global */}
           {isInAttendance && attendanceChamado && (
             <div 
               onClick={() => navigate('/chamados')}

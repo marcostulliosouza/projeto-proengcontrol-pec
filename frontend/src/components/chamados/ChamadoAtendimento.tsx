@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Button, Modal } from '../ui';
 import { ChamadoService } from '../../services/chamadoService';
-import { useSocket } from '../../contexts/SocketContext';
+import { useSocket } from '../../hooks/useSocket';
 import type { Chamado } from '../../types';
 import SeletorDetrator from '../ui/DetratorActionSelector';
+import TransferirChamadoModal from './TransferirChamadoModal';
 
 interface ChamadoAtendimentoProps {
   chamado: Chamado;
@@ -24,6 +25,7 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
   const [loading, setLoading] = useState(false);
   const [realStartTime, setRealStartTime] = useState<Date | null>(null);
   const [shouldClose, setShouldClose] = useState(false);
+  const [showTransferirModal, setShowTransferirModal] = useState(false);
 
   const { socket, cancelAttendance, currentAttendance, finishAttendance } = useSocket();
 
@@ -40,50 +42,104 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
 
   // Buscar tempo inicial do atendimento
   useEffect(() => {
-    const initializeTimer = async () => {
-      try {
-        console.log(`⏰ Inicializando timer para chamado ${chamado.cha_id}...`);
-        
-        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/v1';
-        const response = await fetch(`${apiUrl}/chamados/atendimentos-ativos`);
-        const data = await response.json();
-        
-        if (data.success && data.data) {
-          const myAttendance = data.data.find((att: { 
-            atc_chamado: number; 
-            atc_data_hora_inicio: string;
-            atc_colaborador: number;
-          }) => att.atc_chamado === chamado.cha_id && att.atc_colaborador === currentAttendance?.userId);
-          
-          if (myAttendance) {
-            const startTime = new Date(myAttendance.atc_data_hora_inicio);
-            const now = new Date();
-            const diffInMs = now.getTime() - startTime.getTime();
-            
-            // Validar se a data não é futura ou muito antiga
-            if (diffInMs > 0 && diffInMs < (24 * 60 * 60 * 1000)) { // Menor que 24 horas
-              setRealStartTime(startTime);
-              const currentSeconds = Math.floor(diffInMs / 1000);
-              setTimer(Math.max(0, currentSeconds));
-              console.log(`✅ Timer inicializado: ${currentSeconds}s (início: ${startTime.toLocaleTimeString()})`);
-              return;
-            }
-          }
-        }
-        
-        // Fallback: usar hora atual
-        console.log('⚠️ Usando fallback - definindo início como agora');
-        setRealStartTime(new Date());
-        setTimer(0);
-      } catch (error) {
-        console.error('Erro ao buscar tempo inicial:', error);
-        setRealStartTime(new Date());
-        setTimer(0);
+    if (!socket) return;
+
+    const handleAttendanceFinished = (data: { chamadoId: number; userId?: number }) => {
+      console.log('✅ Socket: Atendimento finalizado recebido', data);
+      if (data.chamadoId === chamado.cha_id) {
+        console.log('✅ Meu atendimento finalizado - fechando modal');
+        setShouldClose(true);
       }
     };
 
-    initializeTimer();
-  }, [chamado.cha_id, currentAttendance?.userId]);
+    const handleAttendanceCancelled = (data: { chamadoId: number; userId?: number }) => {
+      console.log('🚫 Socket: Atendimento cancelado recebido', data);
+      if (data.chamadoId === chamado.cha_id) {
+        console.log('🚫 Meu atendimento cancelado - fechando modal');
+        setShouldClose(true);
+      }
+    };
+
+    // CORREÇÃO: Handler específico para quando EU transfiro o chamado
+    const handleTransferCompleted = (data: { 
+      chamadoId: number; 
+      fromUserId: number; 
+      toUserId: number; 
+      toUserName: string;
+    }) => {
+      console.log('🔄 Transferência concluída:', data);
+      if (data.chamadoId === chamado.cha_id && data.fromUserId === currentAttendance?.userId) {
+        console.log('✅ EU transferi este chamado - fechando modal SEM resetar timer');
+        setShouldClose(true);
+      }
+    };
+
+    // CORREÇÃO: Handler quando recebo transferência
+    const handleCallTransferredToMe = (data: { 
+      chamadoId: number; 
+      fromUserName: string;
+      toUserName: string;
+      timestamp: string;
+    }) => {
+      console.log('📨 Chamado transferido para mim:', data);
+      if (data.chamadoId === chamado.cha_id) {
+        console.log('📨 Recebi transferência - NÃO fechar modal, apenas atualizar timer');
+        
+        // Atualizar timer para novo início
+        const newStartTime = new Date(data.timestamp);
+        setRealStartTime(newStartTime);
+        setTimer(0);
+        
+        // NÃO fechar o modal, apenas mostrar notificação
+        alert(`📨 Este chamado foi transferido para você por ${data.fromUserName}`);
+      }
+    };
+
+    // Eventos pessoais
+    const handleMyAttendanceFinished = () => {
+      console.log('✅ Socket: Meu atendimento finalizado (evento pessoal)');
+      setShouldClose(true);
+    };
+
+    const handleMyAttendanceCancelled = () => {
+      console.log('🚫 Socket: Meu atendimento cancelado (evento pessoal)');
+      setShouldClose(true);
+    };
+
+    // Escutar atualizações de timers para detectar remoção
+    const handleTimersSync = (timersData: { chamadoId: number; userId: number }[]) => {
+      if (!Array.isArray(timersData)) return;
+      
+      const meuTimer = timersData.find(timer => 
+        timer.chamadoId === chamado.cha_id && timer.userId === currentAttendance?.userId
+      );
+      
+      if (!meuTimer) {
+        console.log('⏰ Meu timer não existe mais - chamado finalizado/cancelado');
+        setShouldClose(true);
+      }
+    };
+
+    socket.on('user_finished_attendance', handleAttendanceFinished);
+    socket.on('user_cancelled_attendance', handleAttendanceCancelled);
+    socket.on('attendance_finished', handleMyAttendanceFinished);
+    socket.on('attendance_cancelled', handleMyAttendanceCancelled);
+    socket.on('timers_sync', handleTimersSync);
+    socket.on('transfer_completed', handleTransferCompleted); // CORRIGIDO
+    socket.on('call_transferred_to_you', handleCallTransferredToMe); // CORRIGIDO
+    
+
+    return () => {
+      socket.off('user_finished_attendance', handleAttendanceFinished);
+      socket.off('user_cancelled_attendance', handleAttendanceCancelled);
+      socket.off('attendance_finished', handleMyAttendanceFinished);
+      socket.off('attendance_cancelled', handleMyAttendanceCancelled);
+      socket.off('timers_sync', handleTimersSync);
+      socket.off('transfer_completed', handleTransferCompleted);
+      socket.off('call_transferred_to_you', handleCallTransferredToMe);
+    };
+  }, [socket, chamado.cha_id, currentAttendance?.userId]);
+
 
   // Timer local contínuo
   useEffect(() => {
@@ -142,11 +198,34 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
       }
     };
 
+    const handleTransferCompleted = (data: { chamadoId: number }) => {
+      console.log('✅ Transferência concluída:', data);
+      if (data.chamadoId === chamado.cha_id) {
+        console.log('✅ Meu chamado foi transferido - fechando modal');
+        setShouldClose(true);
+      }
+    };
+  
+    // NOVO: Handler para recebimento de transferência
+    const handleCallTransferredToMe = (data: { chamadoId: number; fromUserName: string }) => {
+      console.log('📨 Chamado transferido para mim:', data);
+      if (data.chamadoId === chamado.cha_id) {
+        console.log('📨 Recebi transferência - atualizando modal');
+        // Recarregar dados do chamado
+        setTimeout(() => {
+          window.location.reload(); // Força reload para garantir sincronização
+        }, 1000);
+      }
+    };
+  
+
     socket.on('user_finished_attendance', handleAttendanceFinished);
     socket.on('user_cancelled_attendance', handleAttendanceCancelled);
     socket.on('attendance_finished', handleMyAttendanceFinished);
     socket.on('attendance_cancelled', handleMyAttendanceCancelled);
     socket.on('timers_sync', handleTimersSync);
+    socket.on('transfer_completed', handleTransferCompleted);
+    socket.on('call_transferred_to_you', handleCallTransferredToMe);
 
     return () => {
       socket.off('user_finished_attendance', handleAttendanceFinished);
@@ -154,6 +233,8 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
       socket.off('attendance_finished', handleMyAttendanceFinished);
       socket.off('attendance_cancelled', handleMyAttendanceCancelled);
       socket.off('timers_sync', handleTimersSync);
+      socket.off('transfer_completed', handleTransferCompleted);
+      socket.off('call_transferred_to_you', handleCallTransferredToMe);
     };
   }, [socket, chamado.cha_id, currentAttendance?.userId]);
 
@@ -364,30 +445,49 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
 
       {/* Botões */}
       <div className="flex justify-between">
-        <Button
-          variant="danger"
-          onClick={() => setShowCancelarModal(true)}
-          disabled={loading}
-          title="Cancelar atendimento"
-        >
-          🚫 Cancelar Atendimento
-        </Button>
+        <div className="flex space-x-3">
+          <Button
+            variant="danger"
+            onClick={() => setShowCancelarModal(true)}
+            disabled={loading}
+            title="Cancelar atendimento"
+          >
+            🚫 Cancelar
+          </Button>
+          
+          <Button
+            variant="secondary"
+            onClick={() => setShowTransferirModal(true)}
+            disabled={loading}
+            title="Transferir para outro usuário"
+          >
+            🔄 Transferir
+          </Button>
+        </div>
         
         <Button
           variant="success"
           onClick={() => setShowFinalizarModal(true)}
           disabled={loading || !selectedDetrator || !descricaoAtendimento.trim() || caracteresRestantes < 0}
           loading={loading}
-          title={
-            !selectedDetrator ? 'Selecione um detrator' :
-            !descricaoAtendimento.trim() ? 'Digite a descrição da ação' :
-            caracteresRestantes < 0 ? 'Descrição muito longa' :
-            'Finalizar chamado'
-          }
+          title="Finalizar Chamado"
         >
           ✅ Finalizar Chamado
         </Button>
       </div>
+
+      {/* Modal de Transferir */}
+      {showTransferirModal && (
+        <TransferirChamadoModal
+          isOpen={true}
+          onClose={() => setShowTransferirModal(false)}
+          chamado={chamado}
+          onTransfer={() => {
+            setShowTransferirModal(false);
+            onCancel(); // Fecha o modal de atendimento
+          }}
+        />
+      )}
 
       {/* Modal de Confirmação Finalizar */}
       {showFinalizarModal && (

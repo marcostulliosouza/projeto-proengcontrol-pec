@@ -88,6 +88,17 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [state, dispatch] = useReducer(authReducer, initialState);
 
+  // Função de logout definida antes do useEffect
+  const logout = async (): Promise<void> => {
+    try {
+      await AuthService.logout();
+    } catch (error) {
+      console.error('Erro no logout:', error);
+    } finally {
+      dispatch({ type: 'LOGOUT' });
+    }
+  };
+
   // Verificar se usuário já está logado ao carregar a aplicação
   useEffect(() => {
     const initializeAuth = async () => {
@@ -98,7 +109,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             // Verificar se o token ainda é válido fazendo uma requisição
             try {
               const currentUser = await AuthService.me();
-              dispatch({ type: 'LOAD_USER', payload: currentUser });
+              // Garantir que o usuário tem o formato correto
+              const normalizedUser: User = {
+                id: currentUser.id,
+                nome: currentUser.nome,
+                login: currentUser.login,
+                categoria: currentUser.categoria,
+                categoriaNome: currentUser.categoriaNome
+              };
+              dispatch({ type: 'LOAD_USER', payload: normalizedUser });
             } catch {
               // Token inválido, fazer logout
               await logout();
@@ -116,7 +135,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
 
     initializeAuth();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Função de login
   const login = async (credentials: LoginCredentials): Promise<void> => {
@@ -125,27 +144,25 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       const response = await AuthService.login(credentials);
       
+      // Normalizar o usuário
+      const normalizedUser: User = {
+        id: response.user.id,
+        nome: response.user.nome,
+        login: response.user.login,
+        categoria: response.user.categoria,
+        categoriaNome: response.user.categoriaNome
+      };
+      
       dispatch({
         type: 'LOGIN_SUCCESS',
         payload: {
-          user: response.user,
+          user: normalizedUser,
           token: response.token,
         },
       });
     } catch (error) {
       dispatch({ type: 'LOGIN_FAILURE' });
       throw error; // Re-throw para o componente tratar
-    }
-  };
-
-  // Função de logout
-  const logout = async (): Promise<void> => {
-    try {
-      await AuthService.logout();
-    } catch (error) {
-      console.error('Erro no logout:', error);
-    } finally {
-      dispatch({ type: 'LOGOUT' });
     }
   };
 
