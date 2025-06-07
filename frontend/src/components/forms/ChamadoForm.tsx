@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Button, Input, Select } from '../ui';
+import { Button, CustomSelect, Input, Select } from '../ui';
 import { ChamadoService, type TipoChamado, type Cliente, type Produto } from '../../services/chamadoService';
 import type { Chamado } from '../../types';
 
@@ -141,7 +141,7 @@ const ChamadoForm: React.FC<ChamadoFormProps> = ({
           error={errors.cha_tipo}
         />
 
-        <Select
+        <CustomSelect
           label="Cliente"
           required
           value={formData.cha_cliente}
@@ -154,34 +154,36 @@ const ChamadoForm: React.FC<ChamadoFormProps> = ({
           error={errors.cha_cliente}
         />
 
-        <Select
+        <CustomSelect
           label="Produto"
+          required
           value={formData.cha_produto}
           onChange={(value) => handleChange('cha_produto', value)}
           options={produtos.map(produto => ({
             value: produto.pro_id,
             label: produto.pro_nome
           }))}
-          placeholder="Selecione o produto (opcional)"
+          placeholder="Selecione o produto"
           disabled={!formData.cha_cliente}
         />
 
         <Input
           label="DT (Documento Técnico)"
+          required
           value={formData.cha_DT}
           onChange={(e) => handleChange('cha_DT', e.target.value)}
-          placeholder="Ex: DT-2025-001"
+          placeholder="Ex: 000999"
         />
       </div>
 
       <div>
-        <label className="form-label">Descrição *</label>
+        <label className="form-label">Descrição</label>
         <textarea
           className={`form-input min-h-[120px] resize-y ${errors.cha_descricao ? 'border-red-500' : ''}`}
+          required
           value={formData.cha_descricao}
           onChange={(e) => handleChange('cha_descricao', e.target.value)}
           placeholder="Descreva detalhadamente o problema ou solicitação..."
-          required
         />
         {errors.cha_descricao && (
           <p className="form-error">{errors.cha_descricao}</p>
