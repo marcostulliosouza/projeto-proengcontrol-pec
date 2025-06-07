@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import React, { useState, useEffect } from 'react';
 import { Card, Button, Modal } from '../ui';
 import { ChamadoService } from '../../services/chamadoService';
@@ -67,40 +67,49 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
       try {
         console.log(`⏰ Inicializando timer para chamado ${chamado.cha_id}...`);
         
-        // PRIMEIRO: Verificar se há dados preservados de transferência no evento
-        let preservedData: any = null;
-        
-        const handleTransferData = (event: Event) => {
-          const customEvent = event as CustomEvent<{
-            chamadoId: number;
-            preservedTime: number;
-            originalStartTime: string;
-          }>;
+        // PRIMEIRO: Verificar se há dados de transferência recebida
+        const checkTransferData = () => {
+          const transferKeys = Object.keys(sessionStorage).filter(key => 
+            key.startsWith('received_transfer_') && key.includes(chamado.cha_id.toString())
+          );
           
-          if (customEvent.detail.chamadoId === chamado.cha_id) {
-            preservedData = customEvent.detail;
-            console.log('🔄 Dados preservados encontrados:', preservedData);
+          for (const key of transferKeys) {
+            try {
+              const transferData = JSON.parse(sessionStorage.getItem(key) || '{}');
+              if (transferData.chamadoId === chamado.cha_id && transferData.startTime) {
+                console.log('🔄 Dados de transferência encontrados:', transferData);
+                return transferData;
+              }
+            } catch (error) {
+              sessionStorage.removeItem(key);
+            }
           }
+          return null;
         };
+  
+        const transferData = checkTransferData();
         
-        // Escutar evento de transferência recebida (apenas uma vez)
-        window.addEventListener('transferReceived', handleTransferData as EventListener, { once: true });
-        
-        // Aguardar um pouco para capturar evento
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-        window.removeEventListener('transferReceived', handleTransferData as EventListener);
-        
-        if (preservedData) {
-          console.log(`⏰ Usando tempo preservado: ${preservedData.preservedTime}s`);
-          const startTime = new Date(preservedData.originalStartTime);
+        if (transferData) {
+          // Usar dados da transferência
+          const startTime = new Date(transferData.startTime);
+          const now = new Date();
+          const currentSeconds = Math.floor((now.getTime() - startTime.getTime()) / 1000);
+          
           setRealStartTime(startTime);
-          setTimer(preservedData.preservedTime);
+          setTimer(Math.max(0, currentSeconds));
+          
+          console.log(`✅ Timer inicializado da transferência: ${currentSeconds}s desde ${transferData.startTime}`);
+          
+          // Limpar dados da transferência
+          Object.keys(sessionStorage).forEach(key => {
+            if (key.startsWith('received_transfer_') && key.includes(chamado.cha_id.toString())) {
+              sessionStorage.removeItem(key);
+            }
+          });
           return;
         }
         
-        // Rest of your code remains the same...
-        // FALLBACK: Buscar do backend
+        // SEGUNDO: Buscar do backend sempre o tempo real
         const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/v1';
         const response = await fetch(`${apiUrl}/chamados/atendimentos-ativos`);
         const data = await response.json();
@@ -110,7 +119,7 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
             atc_chamado: number; 
             atc_data_hora_inicio: string;
             atc_colaborador: number;
-          }) => att.atc_chamado === chamado.cha_id && att.atc_colaborador === currentAttendance?.userId);
+          }) => att.atc_chamado === chamado.cha_id);
           
           if (myAttendance) {
             const startTime = new Date(myAttendance.atc_data_hora_inicio);
@@ -121,16 +130,17 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
               setRealStartTime(startTime);
               const currentSeconds = Math.floor(diffInMs / 1000);
               setTimer(Math.max(0, currentSeconds));
-              console.log(`✅ Timer inicializado do backend: ${currentSeconds}s`);
+              console.log(`✅ Timer inicializado do backend: ${currentSeconds}s desde ${myAttendance.atc_data_hora_inicio}`);
               return;
             }
           }
         }
         
-        // Último fallback
+        // Último fallback - EVITAR USAR
         console.log('⚠️ Usando fallback - definindo início como agora');
         setRealStartTime(new Date());
         setTimer(0);
+        
       } catch (error) {
         console.error('Erro ao buscar tempo inicial:', error);
         setRealStartTime(new Date());

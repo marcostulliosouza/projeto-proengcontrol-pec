@@ -136,9 +136,9 @@ export const useChamadosRealTime = (initialChamados: Chamado[]) => {
         initialSeconds = Math.floor((new Date().getTime() - realStartTime.getTime()) / 1000);
         console.log(`⏰ Timer de transferência: ${initialSeconds}s desde ${data.startTime}`);
       } else {
-        // Novo atendimento
+        // Novo atendimento - usar tempo fornecido
         realStartTime = new Date(data.startTime);
-        initialSeconds = 0;
+        initialSeconds = Math.floor((new Date().getTime() - realStartTime.getTime()) / 1000);
       }
     
       // Adicionar timer

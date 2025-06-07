@@ -379,7 +379,7 @@ export class AtendimentoAtivoModel {
       await connection.beginTransaction();
       console.log(`🔄 Iniciando transferência: Chamado ${chamadoId}, ${antigoColaboradorId} → ${novoColaboradorId}`);
       
-      // 1. Verificar se o chamado está sendo atendido pelo usuário antigo
+      // 1. Buscar atendimento atual
       const atendimentoAtivo = await this.buscarPorChamado(chamadoId);
       if (!atendimentoAtivo || atendimentoAtivo.atc_colaborador !== antigoColaboradorId) {
         await connection.rollback();
@@ -393,59 +393,28 @@ export class AtendimentoAtivoModel {
         throw new Error('Colaborador destino já está atendendo outro chamado');
       }
   
-      // 3. CALCULAR tempo total acumulado (incluindo transferências anteriores)
-      const tempoInicioOriginal = new Date(atendimentoAtivo.atc_data_hora_inicio);
-      const agora = new Date();
+      // 3. PRESERVAR o tempo original - NUNCA ALTERAR cha_data_hora_atendimento
+      const startTimeOriginal = atendimentoAtivo.atc_data_hora_inicio;
       
-      // Se já tem tempo_decorrido (de transferências anteriores), somar com atual
-      const tempoBaseExistente = atendimentoAtivo.tempo_decorrido || 0;
-      const tempoAtualMs = agora.getTime() - tempoInicioOriginal.getTime();
-      const tempoAtualSegundos = Math.floor(tempoAtualMs / 1000);
-      
-      // IMPORTANTE: Se tempo_decorrido > tempoAtualSegundos, significa que há tempo acumulado
-      const tempoTotalPreservado = Math.max(tempoBaseExistente, tempoAtualSegundos);
-      
-      console.log(`⏰ Tempo a preservar: ${tempoTotalPreservado}s (base: ${tempoBaseExistente}s, atual: ${tempoAtualSegundos}s)`);
-  
-      // 4. Finalizar atendimento do usuário antigo
-      const finalizarQuery = `
+      // 4. APENAS atualizar o colaborador responsável, mantendo data de início
+      const updateQuery = `
         UPDATE atendimentos_chamados 
-        SET atc_data_hora_termino = NOW()
-        WHERE atc_chamado = ? AND atc_colaborador = ? AND atc_data_hora_termino IS NULL
+        SET atc_colaborador = ?
+        WHERE atc_chamado = ? AND atc_data_hora_termino IS NULL
       `;
-      await connection.execute(finalizarQuery, [chamadoId, antigoColaboradorId]);
+      await connection.execute(updateQuery, [novoColaboradorId, chamadoId]);
   
-      // 5. CRIAR novo atendimento com data ajustada para preservar tempo
-      // Calcular nova data de início que preserve o tempo total
-      const novaDataInicio = new Date(agora.getTime() - (tempoTotalPreservado * 1000));
-      
-      const novoAtendimentoQuery = `
-        INSERT INTO atendimentos_chamados (
-          atc_chamado, 
-          atc_colaborador, 
-          atc_data_hora_inicio
-        ) VALUES (?, ?, ?)
-      `;
-      await connection.execute(novoAtendimentoQuery, [
-        chamadoId, 
-        novoColaboradorId, 
-        novaDataInicio.toISOString().slice(0, 19).replace('T', ' ')
-      ]);
-  
-      // 6. Atualizar data de atendimento do chamado (manter original ou atual)
-      const atualizarChamadoQuery = `
-        UPDATE chamados 
-        SET cha_data_hora_atendimento = NOW()
-        WHERE cha_id = ?
-      `;
-      await connection.execute(atualizarChamadoQuery, [chamadoId]);
+      // 5. Calcular tempo total preservado
+      const agora = new Date();
+      const tempoTotalMs = agora.getTime() - new Date(startTimeOriginal).getTime();
+      const tempoTotalSegundos = Math.floor(tempoTotalMs / 1000);
   
       await connection.commit();
-      console.log(`✅ Transferência concluída - tempo preservado: ${tempoTotalPreservado}s`);
+      console.log(`✅ Transferência concluída - tempo preservado: ${tempoTotalSegundos}s desde ${startTimeOriginal}`);
       
       return {
-        tempoPreservado: tempoTotalPreservado,
-        startTimeOriginal: novaDataInicio.toISOString()
+        tempoPreservado: tempoTotalSegundos,
+        startTimeOriginal: startTimeOriginal
       };
       
     } catch (error) {

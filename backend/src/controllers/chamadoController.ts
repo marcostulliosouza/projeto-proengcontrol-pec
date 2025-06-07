@@ -420,10 +420,9 @@ export const transferirChamado = asyncHandler(async (req: AuthRequest, res: Resp
   }
 
   try {
-    const temposPreservados = req.app.get('temposPreservados') as Map<number, any>;
     console.log(`🔄 API: Transferindo chamado ${chamadoId}: ${antigoColaboradorId} → ${novoColaboradorId}`);
     
-    // Buscar atendimento atual
+    // Buscar atendimento atual para obter tempo original
     const atendimentoAtual = await AtendimentoAtivoModel.buscarPorChamado(chamadoId);
     if (!atendimentoAtual) {
       res.status(400).json({
@@ -434,29 +433,8 @@ export const transferirChamado = asyncHandler(async (req: AuthRequest, res: Resp
       return;
     }
 
-    // Calcular tempo atual
-    const agora = new Date();
-    const inicio = new Date(atendimentoAtual.atc_data_hora_inicio);
-    const tempoAtual = Math.floor((agora.getTime() - inicio.getTime()) / 1000);
-    
-    // Verificar se há tempo preservado anterior
-    const dadosPreservados = temposPreservados.get(chamadoId);
-    const tempoTotal = dadosPreservados ? dadosPreservados.tempoAcumulado + tempoAtual : tempoAtual;
-    
-    console.log(`⏰ Tempo total a preservar: ${tempoTotal}s`);
-
-    // Salvar tempo para próxima transferência
-    temposPreservados.set(chamadoId, {
-      tempoAcumulado: tempoTotal,
-      startTimeOriginal: dadosPreservados?.startTimeOriginal || atendimentoAtual.atc_data_hora_inicio,
-      ultimaAtualizacao: agora
-    });
-
-    // Fazer transferência
-    await AtendimentoAtivoModel.transferir(chamadoId, antigoColaboradorId, novoColaboradorId);
-
-    // Calcular nova data de início ajustada
-    const novaDataInicio = new Date(agora.getTime() - (tempoTotal * 1000));
+    // Fazer transferência (preserva tempo original)
+    const result = await AtendimentoAtivoModel.transferir(chamadoId, antigoColaboradorId, novoColaboradorId);
 
     // EMITIR eventos via WebSocket
     const io = req.app.get('io');
@@ -477,13 +455,13 @@ export const transferirChamado = asyncHandler(async (req: AuthRequest, res: Resp
           timestamp
         });
 
-        // 2. Notificar quem recebeu COM TEMPO TOTAL PRESERVADO
+        // 2. Notificar quem recebeu COM TEMPO PRESERVADO
         io.to(novoUser.socketId).emit('transfer_received', {
           chamadoId,
           userId: novoColaboradorId,
           userName: novoUser.nome,
-          startTime: novaDataInicio.toISOString(), // Usando a data ajustada
-          tempoJaDecorrido: tempoTotal, // Tempo total preservado
+          startTime: result.startTimeOriginal, // TEMPO ORIGINAL
+          tempoJaDecorrido: result.tempoPreservado,
           transferredBy: antigoUser.nome,
           timestamp,
           autoOpen: true
@@ -494,11 +472,11 @@ export const transferirChamado = asyncHandler(async (req: AuthRequest, res: Resp
           chamadoId,
           userId: novoColaboradorId,
           userName: novoUser.nome,
-          startTime: novaDataInicio.toISOString(), // Usando a data ajustada
+          startTime: result.startTimeOriginal, // TEMPO ORIGINAL
           motivo: 'transferred_general'
         });
 
-        console.log(`📡 Eventos emitidos - tempo preservado: ${tempoTotal}s`);
+        console.log(`📡 Eventos emitidos - tempo preservado: ${result.tempoPreservado}s`);
       }
     }
 
@@ -506,8 +484,8 @@ export const transferirChamado = asyncHandler(async (req: AuthRequest, res: Resp
       success: true,
       message: 'Chamado transferido com sucesso',
       data: {
-        tempoPreservado: tempoTotal,
-        tempoTotalAntes: tempoTotal
+        tempoPreservado: result.tempoPreservado,
+        startTimeOriginal: result.startTimeOriginal
       },
       timestamp: new Date().toISOString()
     } as ApiResponse);

@@ -602,11 +602,11 @@ const Chamados: React.FC = () => {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-secondary-900">Suporte à Linha</h1>
+          <h1 className="text-xl font-bold text-secondary-900">Suporte à Linha</h1>
           <div className="flex items-center space-x-4 mt-1">
             <p className="text-sm text-secondary-600">
               {pagination.totalItems === 1 ? '1 Chamado' : `${pagination.totalItems} Chamados`}
@@ -646,7 +646,7 @@ const Chamados: React.FC = () => {
       </div>
 
       {/* Filtros */}
-      <Card>
+      <Card className="card-compact">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-4">
           <Input
             placeholder="Buscar chamados..."
@@ -693,7 +693,7 @@ const Chamados: React.FC = () => {
       </Card>
  
       {/* Tabela */}
-      <Card>
+      <Card className="card-compact">
         <Table
           columns={columns}
           data={chamados}

@@ -16,6 +16,7 @@ interface TableProps<T = Record<string, unknown>> {
   onSort?: (key: string) => void;
   sortKey?: string;
   sortDirection?: 'asc' | 'desc';
+  className?: string; // Adicionar prop para classes customizadas
 }
 
 const Table = <T extends Record<string, unknown>>({
@@ -26,6 +27,7 @@ const Table = <T extends Record<string, unknown>>({
   onSort,
   sortKey,
   sortDirection,
+  className = '',
 }: TableProps<T>) => {
   const handleSort = (key: string) => {
     if (onSort) {
@@ -36,9 +38,9 @@ const Table = <T extends Record<string, unknown>>({
   if (loading) {
     return (
       <div className="bg-white rounded-lg border border-secondary-200">
-        <div className="p-8 text-center">
-          <div className="spinner mx-auto mb-4"></div>
-          <p className="text-secondary-600">Carregando...</p>
+        <div className="p-6 text-center"> {/* Reduzido p-8 */}
+          <div className="spinner mx-auto mb-3"></div> {/* Reduzido mb-4 */}
+          <p className="text-secondary-600 text-sm">Carregando...</p>
         </div>
       </div>
     );
@@ -47,15 +49,15 @@ const Table = <T extends Record<string, unknown>>({
   return (
     <div className="bg-white rounded-lg border border-secondary-200 overflow-hidden">
       <div className="table-container">
-        <table className="min-w-full divide-y divide-secondary-200">
+        <table className={`min-w-full divide-y divide-secondary-200 ${className}`}>
           <thead className="bg-secondary-50">
             <tr>
               {columns.map((column) => (
                 <th
                   key={column.key}
-                  className={`px-6 py-3 text-left text-xs font-medium text-secondary-500 uppercase tracking-wider ${
+                  className={`px-4 py-2.5 text-left text-xs font-medium text-secondary-500 uppercase tracking-wider ${
                     column.sortable ? 'cursor-pointer hover:bg-secondary-100' : ''
-                  } ${column.className || ''}`}
+                  } ${column.className || ''}`} // Reduzido px-6 py-3
                   onClick={() => column.sortable && handleSort(column.key)}
                 >
                   <div className="flex items-center space-x-1">
@@ -94,7 +96,7 @@ const Table = <T extends Record<string, unknown>>({
           <tbody className="bg-white divide-y divide-secondary-200">
             {data.length === 0 ? (
               <tr>
-                <td colSpan={columns.length} className="px-6 py-8 text-center text-secondary-500">
+                <td colSpan={columns.length} className="px-4 py-6 text-center text-secondary-500 text-sm"> {/* Compactado */}
                   {emptyMessage}
                 </td>
               </tr>
@@ -104,7 +106,7 @@ const Table = <T extends Record<string, unknown>>({
                   {columns.map((column) => (
                     <td
                       key={column.key}
-                      className={`px-6 py-4 whitespace-nowrap text-sm text-secondary-900 ${column.className || ''}`}
+                      className={`px-4 py-3 whitespace-nowrap text-sm text-secondary-900 ${column.className || ''}`} // Reduzido px-6 py-4
                     >
                       {column.render
                         ? column.render(item[column.key], item)

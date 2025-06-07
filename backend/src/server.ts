@@ -229,51 +229,52 @@ io.on('connection', (socket) => {
         return;
       }
       
-      // NOVO: Buscar dados do atendimento atual para preservar tempo
+      // Buscar dados do atendimento atual para preservar tempo
       const atendimentoAtual = await AtendimentoAtivoModel.buscarPorChamado(chamadoId);
       if (!atendimentoAtual) {
         socket.emit('transfer_error', { message: 'Atendimento não encontrado', chamadoId });
         return;
       }
       
-      // Calcular tempo já decorrido
-      const tempoJaDecorrido = Math.floor((new Date().getTime() - new Date(atendimentoAtual.atc_data_hora_inicio).getTime()) / 1000);
+      // IMPORTANTE: Preservar o tempo original de início
       const startTimeOriginal = atendimentoAtual.atc_data_hora_inicio;
+      const tempoJaDecorrido = Math.floor((new Date().getTime() - new Date(startTimeOriginal).getTime()) / 1000);
+      
+      // Fazer transferência no banco (só muda colaborador, mantém tempo)
+      const result = await AtendimentoAtivoModel.transferir(chamadoId, antigoColaboradorId, novoColaboradorId);
       
       const timestamp = new Date().toISOString();
       
-      // CORRIGIR: Sequência de eventos mais fluida
-      
-      // 1. IMEDIATAMENTE: Fechar modal de quem transferiu
+      // 1. Notificar quem transferiu
       socket.emit('transfer_completed', {
         chamadoId,
         userId: antigoColaboradorId,
         message: 'Chamado transferido com sucesso',
         timestamp
       });
-      
-      // 2. IMEDIATAMENTE: Abrir modal para quem recebeu COM TEMPO PRESERVADO
+  
+      // 2. Notificar quem recebeu COM TEMPO ORIGINAL PRESERVADO
       io.to(novoUserEntry.socketId).emit('transfer_received', {
         chamadoId,
         userId: novoColaboradorId,
         userName: novoUserEntry.nome,
-        startTime: startTimeOriginal, // USAR TEMPO ORIGINAL
-        tempoJaDecorrido, // TEMPO ACUMULADO
+        startTime: startTimeOriginal, // TEMPO ORIGINAL PRESERVADO
+        tempoJaDecorrido: result.tempoPreservado,
         transferredBy: antigoUser?.nome || 'Usuário',
         timestamp,
         autoOpen: true
       });
-      
+  
       // 3. Broadcast para todos os outros usuários
       socket.broadcast.emit('user_started_attendance', {
         chamadoId,
         userId: novoColaboradorId,
         userName: novoUserEntry.nome,
-        startTime: startTimeOriginal, // PRESERVAR TEMPO ORIGINAL
+        startTime: startTimeOriginal, // TEMPO ORIGINAL PRESERVADO
         motivo: 'transferred_general'
       });
-      
-      console.log(`✅ Socket: Transferência processada - tempo preservado: ${tempoJaDecorrido}s`);
+  
+      console.log(`✅ Socket: Transferência processada - tempo preservado: ${result.tempoPreservado}s desde ${startTimeOriginal}`);
       
     } catch (error) {
       console.error('❌ Erro ao processar transferência via socket:', error);

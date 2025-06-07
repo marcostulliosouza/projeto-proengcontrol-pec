@@ -13,11 +13,11 @@ const Card: React.FC<CardProps> = ({
   return (
     <div className={classes}>
       {title && (
-        <div className="px-6 py-4 border-b border-secondary-200">
-          <h3 className="text-lg font-medium text-secondary-900">{title}</h3>
+        <div className="px-4 py-3 border-b border-secondary-200"> {/* Reduzido px-6 py-4 */}
+          <h3 className="text-base font-medium text-secondary-900">{title}</h3> {/* Reduzido text-lg */}
         </div>
       )}
-      <div className="p-6">
+      <div className="p-4"> {/* Reduzido p-6 */}
         {children}
       </div>
     </div>
