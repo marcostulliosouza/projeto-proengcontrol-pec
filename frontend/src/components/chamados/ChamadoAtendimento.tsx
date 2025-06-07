@@ -1,5 +1,5 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-// ChamadoAtendimento.tsx - SOLUÇÃO SIMPLIFICADA
+/* eslint-disable @typescript-eslint/no-explicit-any */
+// ChamadoAtendimento.tsx - SOLUÇÃO FINAL
 import React, { useState, useEffect, useRef } from 'react';
 import { Card, Button, Modal } from '../ui';
 import { ChamadoService } from '../../services/chamadoService';
@@ -28,86 +28,36 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
   const [realStartTime, setRealStartTime] = useState<Date | null>(null);
   const [showTransferirModal, setShowTransferirModal] = useState(false);
 
-  // NOVA: Flag para controlar se já processou o fechamento
-  const isProcessingClose = useRef(false);
+  // CHAVE: Flag para marcar que o modal está sendo fechado intencionalmente
+  const isClosingIntentionally = useRef(false);
 
-  const { socket, cancelAttendance, currentAttendance, finishAttendance } = useSocket();
-
+  const { cancelAttendance, finishAttendance } = useSocket();
   const caracteresRestantes = 250 - descricaoAtendimento.length;
-
-  // Função de fechamento controlada
-  const handleClose = () => {
-    if (isProcessingClose.current) return;
-    
-    console.log('🔄 Fechando modal de atendimento');
-    isProcessingClose.current = true;
-    onCancel();
-  };
-
-  // Cleanup
-  useEffect(() => {
-    return () => {
-      const keys = Object.keys(sessionStorage).filter(key => 
-        key.startsWith('transferred_') || key.startsWith('received_transfer_')
-      );
-      keys.forEach(key => sessionStorage.removeItem(key));
-    };
-  }, []);
-
-  // Verificar transferência anterior
-  useEffect(() => {
-    const wasTransferred = sessionStorage.getItem(`transferred_${chamado.cha_id}`);
-    if (wasTransferred) {
-      console.log('🔄 Chamado foi transferido anteriormente, fechando modal');
-      sessionStorage.removeItem(`transferred_${chamado.cha_id}`);
-      handleClose();
-    }
-  }, [chamado.cha_id]);
 
   // Inicializar timer
   useEffect(() => {
     const initializeTimer = async () => {
       try {
-        console.log(`⏰ Inicializando timer para chamado ${chamado.cha_id}...`);
+        // Verificar dados de transferência primeiro
+        const transferKeys = Object.keys(sessionStorage).filter(key => 
+          key.startsWith('received_transfer_') && key.includes(chamado.cha_id.toString())
+        );
         
-        // Verificar dados de transferência PRIMEIRO
-        const checkTransferData = () => {
-          const transferKeys = Object.keys(sessionStorage).filter(key => 
-            key.startsWith('received_transfer_') && key.includes(chamado.cha_id.toString())
-          );
-          
-          for (const key of transferKeys) {
-            try {
-              const transferData = JSON.parse(sessionStorage.getItem(key) || '{}');
-              if (transferData.chamadoId === chamado.cha_id && transferData.startTime) {
-                console.log('🔄 Dados de transferência encontrados:', transferData);
-                return transferData;
-              }
-            } catch (error) {
+        for (const key of transferKeys) {
+          try {
+            const transferData = JSON.parse(sessionStorage.getItem(key) || '{}');
+            if (transferData.chamadoId === chamado.cha_id && transferData.startTime) {
+              const startTime = new Date(transferData.startTime);
+              const currentSeconds = Math.floor((new Date().getTime() - startTime.getTime()) / 1000);
+              
+              setRealStartTime(startTime);
+              setTimer(Math.max(0, currentSeconds));
               sessionStorage.removeItem(key);
+              return;
             }
+          } catch {
+            sessionStorage.removeItem(key);
           }
-          return null;
-        };
-  
-        const transferData = checkTransferData();
-        
-        if (transferData) {
-          const startTime = new Date(transferData.startTime);
-          const now = new Date();
-          const currentSeconds = Math.floor((now.getTime() - startTime.getTime()) / 1000);
-          
-          setRealStartTime(startTime);
-          setTimer(Math.max(0, currentSeconds));
-          
-          console.log(`✅ Timer inicializado da transferência: ${currentSeconds}s`);
-          
-          Object.keys(sessionStorage).forEach(key => {
-            if (key.startsWith('received_transfer_') && key.includes(chamado.cha_id.toString())) {
-              sessionStorage.removeItem(key);
-            }
-          });
-          return;
         }
         
         // Buscar do backend
@@ -116,28 +66,16 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
         const data = await response.json();
         
         if (data.success && data.data) {
-          const myAttendance = data.data.find((att: { 
-            atc_chamado: number; 
-            atc_data_hora_inicio: string;
-            atc_colaborador: number;
-          }) => att.atc_chamado === chamado.cha_id);
-          
+          const myAttendance = data.data.find((att: any) => att.atc_chamado === chamado.cha_id);
           if (myAttendance) {
             const startTime = new Date(myAttendance.atc_data_hora_inicio);
-            const now = new Date();
-            const diffInMs = now.getTime() - startTime.getTime();
-            
-            if (diffInMs > 0 && diffInMs < (24 * 60 * 60 * 1000)) {
-              setRealStartTime(startTime);
-              const currentSeconds = Math.floor(diffInMs / 1000);
-              setTimer(Math.max(0, currentSeconds));
-              console.log(`✅ Timer inicializado do backend: ${currentSeconds}s`);
-              return;
-            }
+            const currentSeconds = Math.floor((new Date().getTime() - startTime.getTime()) / 1000);
+            setRealStartTime(startTime);
+            setTimer(Math.max(0, currentSeconds));
+            return;
           }
         }
         
-        console.log('⚠️ Usando fallback - definindo início como agora');
         setRealStartTime(new Date());
         setTimer(0);
         
@@ -147,11 +85,11 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
         setTimer(0);
       }
     };
-  
+
     initializeTimer();
   }, [chamado.cha_id]);
 
-  // Timer local contínuo
+  // Timer local
   useEffect(() => {
     if (!realStartTime) return;
 
@@ -162,96 +100,6 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
 
     return () => clearInterval(interval);
   }, [realStartTime]);
-
-  // Socket listeners - SIMPLIFICADO
-  useEffect(() => {
-    if (!socket) return;
-
-    const handleAttendanceFinished = (data: { chamadoId: number; userId?: number }) => {
-      console.log('✅ Socket: Atendimento finalizado recebido', data);
-      if (data.chamadoId === chamado.cha_id) {
-        console.log('✅ Meu atendimento finalizado - fechando modal');
-        handleClose();
-      }
-    };
-
-    const handleAttendanceCancelled = (data: { chamadoId: number; userId?: number }) => {
-      console.log('🚫 Socket: Atendimento cancelado recebido', data);
-      if (data.chamadoId === chamado.cha_id) {
-        console.log('🚫 Meu atendimento cancelado - fechando modal');
-        handleClose();
-      }
-    };
-
-    const handleTransferredOut = (data: { chamadoId: number; userId: number; timestamp: string }) => {
-      console.log('🔄 Socket: Chamado transferido (saída) recebido', data);
-      if (data.chamadoId === chamado.cha_id && data.userId === currentAttendance?.userId) {
-        console.log('🔄 Meu chamado foi transferido - fechando modal');
-        
-        sessionStorage.setItem(`transferred_${data.chamadoId}`, JSON.stringify({
-          transferred: true,
-          timestamp: data.timestamp
-        }));
-        
-        handleClose();
-      }
-    };
-
-    // Registrar apenas os eventos essenciais
-    socket.on('user_finished_attendance', handleAttendanceFinished);
-    socket.on('user_cancelled_attendance', handleAttendanceCancelled);
-    socket.on('user_transferred_out', handleTransferredOut);
-    socket.on('attendance_finished', () => handleAttendanceFinished({ chamadoId: chamado.cha_id }));
-    socket.on('attendance_cancelled', () => handleAttendanceCancelled({ chamadoId: chamado.cha_id }));
-
-    return () => {
-      socket.off('user_finished_attendance', handleAttendanceFinished);
-      socket.off('user_cancelled_attendance', handleAttendanceCancelled);
-      socket.off('user_transferred_out', handleTransferredOut);
-      socket.off('attendance_finished');
-      socket.off('attendance_cancelled');
-    };
-  }, [socket, chamado.cha_id, currentAttendance?.userId]);
-
-  // Event listeners customizados - SIMPLIFICADO
-  useEffect(() => {
-    // Verificar se transferência foi completada
-    const transferCompleted = sessionStorage.getItem(`transfer_completed_${chamado.cha_id}`);
-    if (transferCompleted) {
-      console.log('✅ Transferência completada detectada - fechando modal');
-      sessionStorage.removeItem(`transfer_completed_${chamado.cha_id}`);
-      handleClose();
-      return;
-    }
-
-    const handleTransferCompleted = (event: CustomEvent) => {
-      const { chamadoId } = event.detail;
-      console.log('✅ Evento transferência completada:', chamadoId);
-      
-      if (chamadoId === chamado.cha_id) {
-        console.log('✅ Minha transferência completada - fechando modal');
-        handleClose();
-      }
-    };
-
-    const handleChamadoFinalizado = (event: CustomEvent) => {
-      const { chamadoId } = event.detail;
-      console.log(`🎯 Evento customizado: chamado ${chamadoId} finalizado`);
-      
-      if (chamadoId === chamado.cha_id) {
-        console.log('✅ Meu chamado finalizado - fechando modal');
-        handleClose();
-      }
-    };
-
-    window.addEventListener('transferCompleted', handleTransferCompleted as EventListener);
-    window.addEventListener('chamadoFinalizado', handleChamadoFinalizado as EventListener);
-    
-    return () => {
-      window.removeEventListener('transferCompleted', handleTransferCompleted as EventListener);
-      window.removeEventListener('chamadoFinalizado', handleChamadoFinalizado as EventListener);
-    };
-  }, [chamado.cha_id]);
 
   const formatTimer = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
@@ -271,42 +119,41 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
       alert('Descreva a ação realizada durante o chamado.');
       return;
     }
-    
-    if (descricaoAtendimento.trim().length > 250) {
-      alert('Descrição deve ter no máximo 250 caracteres');
-      return;
-    }
   
     try {
       setLoading(true);
-      console.log(`🏁 Finalizando chamado ${chamado.cha_id} com detrator ${selectedDetrator}`);
+      console.log(`🏁 Finalizando chamado ${chamado.cha_id}`);
       
-      // 1. Finalizar usando detrator
+      // Marcar que estamos fechando intencionalmente
+      isClosingIntentionally.current = true;
+      
+      // Finalizar no backend
       await ChamadoService.finalizarChamado(chamado.cha_id, selectedDetrator, descricaoAtendimento.trim());
       
-      console.log(`✅ Chamado finalizado com sucesso via API`);
-  
-      // 2. Fechar modal de confirmação
       setShowFinalizarModal(false);
-  
-      // 3. Notificar o socket DEPOIS da finalização no banco
+      
+      // IMPORTANTE: Notificar socket PRIMEIRO
       finishAttendance();
-  
-      // 4. Buscar chamado atualizado
+      
+      // NOVO: Forçar limpeza imediata do estado global via evento
+      window.dispatchEvent(new CustomEvent('forceCleanAttendance'));
+      
       const updatedChamado = await ChamadoService.getChamado(chamado.cha_id);
-            
-      // 5. Notificar componente pai
       onFinish(updatedChamado);
       
-      // 6. Disparar evento customizado para forçar atualização da lista
+      // Disparar evento para lista
       window.dispatchEvent(new CustomEvent('chamadoFinalizado', { 
         detail: { chamadoId: chamado.cha_id, status: 3 } 
       }));
-
-      // 7. NÃO chamar handleClose aqui - deixar os event listeners fazerem isso
+  
+      // Fechar modal
+      setTimeout(() => {
+        onCancel();
+      }, 300); // Reduzido para 300ms
       
     } catch (error) {
       console.error('Erro ao finalizar chamado:', error);
+      isClosingIntentionally.current = false;
       alert('Erro ao finalizar chamado');
     } finally {
       setLoading(false);
@@ -315,21 +162,30 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
 
   const handleCancelarAtendimento = async () => {
     if (loading) return;
-
+  
     try {
       setLoading(true);
       console.log(`🚫 Cancelando atendimento do chamado ${chamado.cha_id}`);
       
-      // Fechar modal de confirmação primeiro
+      // Marcar que estamos fechando intencionalmente
+      isClosingIntentionally.current = true;
+      
       setShowCancelarModal(false);
       
-      // Cancelar via socket
+      // IMPORTANTE: Notificar socket PRIMEIRO
       cancelAttendance(chamado.cha_id);
       
-      // NÃO chamar handleClose aqui - deixar os event listeners fazerem isso
+      // NOVO: Forçar limpeza imediata do estado global via evento
+      window.dispatchEvent(new CustomEvent('forceCleanAttendance'));
+      
+      // Fechar modal
+      setTimeout(() => {
+        onCancel();
+      }, 300); // Reduzido para 300ms
       
     } catch (error) {
       console.error('Erro ao cancelar atendimento:', error);
+      isClosingIntentionally.current = false;
     } finally {
       setLoading(false);
     }
@@ -362,16 +218,6 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
             <p className="text-xs text-gray-500 mt-2">
               Iniciado às {realStartTime.toLocaleTimeString('pt-BR')}
             </p>
-          )}
-          {timer > 30 * 60 && (
-            <div className="mt-3 p-2 bg-red-100 border border-red-300 rounded text-red-800 text-sm font-medium">
-              ⚠️ Atendimento acima de 30 minutos
-            </div>
-          )}
-          {timer > 15 * 60 && timer <= 30 * 60 && (
-            <div className="mt-3 p-2 bg-yellow-100 border border-yellow-300 rounded text-yellow-800 text-sm">
-              ⏰ Atendimento próximo dos 30 minutos
-            </div>
           )}
         </div>
       </Card>
@@ -435,18 +281,7 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
               placeholder="DESCREVA DETALHADAMENTE A AÇÃO REALIZADA DURANTE O CHAMADO..."
               maxLength={250}
               disabled={loading}
-              style={{ textTransform: 'uppercase' }}
             />
-            {!descricaoAtendimento.trim() && (
-              <p className="text-gray-500 text-sm mt-1">
-                ⚠️ Campo obrigatório para finalizar o chamado
-              </p>
-            )}
-            {caracteresRestantes < 0 && (
-              <p className="text-red-600 text-sm mt-1">
-                ❌ Descrição excede o limite de 250 caracteres
-              </p>
-            )}
           </div>
         </div>
       </Card>
@@ -457,7 +292,6 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
           variant="warning"
           onClick={() => setShowTransferirModal(true)}
           disabled={loading}
-          title="Transferir chamado para outro usuário"
         >
           🔄 Transferir Chamado
         </Button>
@@ -466,7 +300,6 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
           variant="danger"
           onClick={() => setShowCancelarModal(true)}
           disabled={loading}
-          title="Cancelar atendimento"
         >
           🚫 Cancelar Atendimento
         </Button>
@@ -476,12 +309,6 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
           onClick={() => setShowFinalizarModal(true)}
           disabled={loading || !selectedDetrator || !descricaoAtendimento.trim() || caracteresRestantes < 0}
           loading={loading}
-          title={
-            !selectedDetrator ? 'Selecione um detrator' :
-            !descricaoAtendimento.trim() ? 'Digite a descrição da ação' :
-            caracteresRestantes < 0 ? 'Descrição muito longa' :
-            'Finalizar chamado'
-          }
         >
           ✅ Finalizar Chamado
         </Button>
@@ -496,22 +323,6 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
           size="md"
         >
           <div className="space-y-4">
-            <div className="bg-green-50 border border-green-200 p-4 rounded-lg">
-              <h4 className="font-medium text-green-800 mb-2">📋 Resumo do Atendimento</h4>
-              <div className="text-sm text-green-700 space-y-1">
-                <p><strong>Chamado:</strong> #{chamado.cha_id} - {chamado.cha_DT}</p>
-                <p><strong>Tempo total:</strong> {formatTimer(timer)}</p>
-                <p><strong>Cliente:</strong> {chamado.cliente_nome}</p>
-              </div>
-            </div>
-            
-            <div className="bg-gray-50 p-4 rounded border">
-              <p className="font-medium mb-2">Ação realizada:</p>
-              <div className="text-sm bg-white p-3 rounded border max-h-24 overflow-y-auto font-mono">
-                {descricaoAtendimento.trim()}
-              </div>
-            </div>
-
             <div className="bg-yellow-50 border border-yellow-200 p-3 rounded">
               <p className="text-yellow-800 text-sm">
                 ⚠️ Esta ação não pode ser desfeita. Confirma a finalização?
@@ -553,14 +364,6 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
                 ⚠️ Tem certeza que deseja cancelar este atendimento?
               </p>
             </div>
-            
-            <div className="bg-gray-50 p-3 rounded">
-              <p className="text-sm text-gray-600">
-                • O chamado voltará para status "Aberto"<br/>
-                • O tempo de atendimento será perdido<br/>
-                • Outros usuários poderão atender este chamado
-              </p>
-            </div>
 
             <div className="flex justify-end space-x-3">
               <Button
@@ -591,7 +394,10 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
           chamado={chamado}
           onTransfer={() => {
             setShowTransferirModal(false);
-            // NÃO chamar handleClose aqui - deixar os event listeners fazerem isso
+            isClosingIntentionally.current = true;
+            setTimeout(() => {
+              onCancel();
+            }, 500);
           }}
         />
       )}

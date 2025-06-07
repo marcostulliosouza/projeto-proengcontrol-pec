@@ -291,53 +291,77 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       }
     });
 
-newSocket.on('transfer_received', (data: {
-  chamadoId: number;
-  userId: number;
-  userName: string;
-  startTime: string;
-  tempoJaDecorrido: number;
-  transferredBy: string;
-  timestamp: string;
-  autoOpen: boolean;
-}) => {
-  console.log('🎯 Chamado recebido via transferência:', data);
-  if (data.userId === authState.user?.id) {
-    console.log('🎯 Configurando atendimento recebido COM TEMPO PRESERVADO');
-    
-    // Configurar atendimento COM TEMPO PRESERVADO
-    const attendanceInfo: AttendanceInfo = {
-      chamadoId: data.chamadoId,
-      userId: data.userId,
-      userName: data.userName,
-      startTime: data.startTime // TEMPO ORIGINAL
+    newSocket.on('transfer_received', (data: {
+      chamadoId: number;
+      userId: number;
+      userName: string;
+      startTime: string;
+      tempoJaDecorrido: number;
+      transferredBy: string;
+      timestamp: string;
+      autoOpen: boolean;
+    }) => {
+      console.log('🎯 Chamado recebido via transferência:', data);
+      if (data.userId === authState.user?.id) {
+        console.log('🎯 Configurando atendimento recebido COM TEMPO PRESERVADO');
+        
+        // Configurar atendimento COM TEMPO PRESERVADO
+        const attendanceInfo: AttendanceInfo = {
+          chamadoId: data.chamadoId,
+          userId: data.userId,
+          userName: data.userName,
+          startTime: data.startTime // TEMPO ORIGINAL
+        };
+        
+        setCurrentAttendance(attendanceInfo);
+        setIsUserInAttendance(true);
+        
+        console.log(`⏰ Atendimento configurado com tempo preservado: ${data.tempoJaDecorrido}s`);
+        
+        // Disparar evento para abrir modal COM DADOS PRESERVADOS
+        window.dispatchEvent(new CustomEvent('transferReceived', { 
+          detail: { 
+            chamadoId: data.chamadoId,
+            preservedTime: data.tempoJaDecorrido,
+            originalStartTime: data.startTime,
+            transferredBy: data.transferredBy,
+            userName: data.userName
+          } 
+        }));
+        
+        // Notificação
+        if (showSuccessToast) {
+          showSuccessToast(
+            '🔔 Chamado Recebido!',
+            `Chamado #${data.chamadoId} de ${data.transferredBy}`
+          );
+        }
+      }
+    });
+
+    // NOVO: Event listeners para limpeza de estado
+    const handleAttendanceFinished = () => {
+      console.log('🏁 Atendimento finalizado - limpando estado global');
+      setCurrentAttendance(null);
+      setIsUserInAttendance(false);
     };
-    
-    setCurrentAttendance(attendanceInfo);
-    setIsUserInAttendance(true);
-    
-    console.log(`⏰ Atendimento configurado com tempo preservado: ${data.tempoJaDecorrido}s`);
-    
-    // Disparar evento para abrir modal COM DADOS PRESERVADOS
-    window.dispatchEvent(new CustomEvent('transferReceived', { 
-      detail: { 
-        chamadoId: data.chamadoId,
-        preservedTime: data.tempoJaDecorrido,
-        originalStartTime: data.startTime,
-        transferredBy: data.transferredBy,
-        userName: data.userName
-      } 
-    }));
-    
-    // Notificação
-    if (showSuccessToast) {
-      showSuccessToast(
-        '🔔 Chamado Recebido!',
-        `Chamado #${data.chamadoId} de ${data.transferredBy}`
-      );
-    }
-  }
-});
+
+    const handleAttendanceCancelled = () => {
+      console.log('🚫 Atendimento cancelado - limpando estado global');
+      setCurrentAttendance(null);
+      setIsUserInAttendance(false);
+    };
+
+    const handleAttendanceTransferred = () => {
+      console.log('🔄 Atendimento transferido - limpando estado global');
+      setCurrentAttendance(null);
+      setIsUserInAttendance(false);
+    };
+
+    // Adicionar os novos listeners
+    newSocket.on('attendance_finished', handleAttendanceFinished);
+    newSocket.on('attendance_cancelled', handleAttendanceCancelled);
+    newSocket.on('transfer_completed', handleAttendanceTransferred);
 
     socketRef.current = newSocket;
     setSocket(newSocket);
@@ -349,6 +373,11 @@ newSocket.on('transfer_received', (data: {
         socketRef.current = null;
       }
       isInitializing.current = false;
+
+      newSocket.off('attendance_finished', handleAttendanceFinished);
+      newSocket.off('attendance_cancelled', handleAttendanceCancelled);
+      newSocket.off('transfer_completed', handleAttendanceTransferred);
+
     };
   }, [authState.isAuthenticated, authState.user, checkForActiveAttendance, showSuccessToast]);
 
@@ -400,18 +429,28 @@ newSocket.on('transfer_received', (data: {
 
   const cancelAttendance = useCallback((chamadoId: number) => {
     if (!socketRef.current || !authState.user || !isUserInAttendance) return;
-
+  
     console.log(`🚫 Cancelando atendimento ${chamadoId}...`);
+    
+    // NOVO: Limpar estado IMEDIATAMENTE
+    setCurrentAttendance(null);
+    setIsUserInAttendance(false);
+    
     socketRef.current.emit('cancel_attendance', {
       chamadoId,
       userId: authState.user.id
     });
   }, [authState.user, isUserInAttendance]);
-
+  
   const finishAttendance = useCallback(() => {
     if (!socketRef.current || !authState.user || !isUserInAttendance) return;
-
+  
     console.log('🏁 Finalizando atendimento...');
+    
+    // NOVO: Limpar estado IMEDIATAMENTE  
+    setCurrentAttendance(null);
+    setIsUserInAttendance(false);
+    
     socketRef.current.emit('finish_attendance', {
       userId: authState.user.id
     });

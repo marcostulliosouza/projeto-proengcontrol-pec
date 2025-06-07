@@ -74,10 +74,11 @@ const Header: React.FC<HeaderProps> = ({
               onClick={() => navigate('/chamados')}
               className="flex items-center space-x-2 bg-gradient-to-r from-orange-500 to-red-500 text-white px-3 py-1.5 rounded-lg cursor-pointer hover:from-orange-600 hover:to-red-600 transition-all duration-200 shadow-md"
               title="Clique para voltar ao atendimento"
+              key={attendanceChamado.cha_id} // Novo: forçar re-renderização ao mudar de chamado
             >
               <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
               <span className="font-medium text-sm">
-                🔥 #{attendanceChamado.cha_id}
+                🔥 Atendendo o Chamado #{attendanceChamado.cha_id} | {attendanceChamado.produto_nome}
               </span>
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />

@@ -217,44 +217,59 @@ const Chamados: React.FC = () => {
     loadChamados(1);
   }, [filters, loadChamados]);
 
-  // Controle do modal de atendimento
-  useEffect(() => {
-    // Verificar transferências pendentes PRIMEIRO
-    const checkPendingTransfer = () => {
-      const keys = Object.keys(sessionStorage).filter(key => key.startsWith('received_transfer_'));
-      for (const key of keys) {
-        try {
-          const transferData = JSON.parse(sessionStorage.getItem(key) || '{}');
-          if (transferData.chamadoId && transferData.autoOpen) {
-            // Verificar se é o chamado atual em atendimento
-            if (isInAttendance && attendanceChamado?.cha_id === transferData.chamadoId) {
-              console.log(`🎯 Abrindo modal automaticamente para transferência ${transferData.chamadoId}`);
-              setAtendimentoModalOpen(true);
-              sessionStorage.removeItem(key);
-              return true;
-            }
-          }
-        } catch {
-          sessionStorage.removeItem(key);
-        }
-      }
-      return false;
-    };
+  // No Chamados.tsx - CORREÇÃO DO USEEFFECT PROBLEMÁTICO
 
-    // Verificar transferências pendentes primeiro
-    if (checkPendingTransfer()) {
+// Controle do modal de atendimento - VERSÃO CORRIGIDA
+useEffect(() => {
+  // NOVA: Flag para evitar abertura imediata após fechamento
+  const wasJustClosed = sessionStorage.getItem('atendimento_just_closed');
+  if (wasJustClosed) {
+    const closedTime = parseInt(wasJustClosed);
+    if (Date.now() - closedTime < 3000) { // 3 segundos de "quarentena"
+      console.log('🔒 Modal foi fechado recentemente, aguardando...');
       return;
+    } else {
+      sessionStorage.removeItem('atendimento_just_closed');
     }
+  }
 
-    // Lógica original para casos normais
-    if (isInAttendance && attendanceChamado && !atendimentoModalOpen) {
-      console.log('🔄 Abrindo modal de atendimento - usuário em atendimento');
-      setAtendimentoModalOpen(true);
-    } else if (!isInAttendance && atendimentoModalOpen) {
-      console.log('🔄 Fechando modal - não está mais em atendimento');
-      setAtendimentoModalOpen(false);
+  // Verificar transferências pendentes PRIMEIRO
+  const checkPendingTransfer = () => {
+    const keys = Object.keys(sessionStorage).filter(key => key.startsWith('received_transfer_'));
+    for (const key of keys) {
+      try {
+        const transferData = JSON.parse(sessionStorage.getItem(key) || '{}');
+        if (transferData.chamadoId && transferData.autoOpen) {
+          if (isInAttendance && attendanceChamado?.cha_id === transferData.chamadoId) {
+            console.log(`🎯 Abrindo modal automaticamente para transferência ${transferData.chamadoId}`);
+            setAtendimentoModalOpen(true);
+            sessionStorage.removeItem(key);
+            return true;
+          }
+        }
+      } catch {
+        sessionStorage.removeItem(key);
+      }
     }
-  }, [isInAttendance, attendanceChamado, atendimentoModalOpen]);
+    return false;
+  };
+
+  // Verificar transferências pendentes primeiro
+  if (checkPendingTransfer()) {
+    return;
+  }
+
+  // Lógica original para casos normais
+  if (isInAttendance && attendanceChamado && !atendimentoModalOpen) {
+    console.log('🔄 Abrindo modal de atendimento - usuário em atendimento');
+    setAtendimentoModalOpen(true);
+  } else if (!isInAttendance && atendimentoModalOpen) {
+    console.log('🔄 Fechando modal - não está mais em atendimento');
+    setAtendimentoModalOpen(false);
+    // NOVO: Marcar que o modal foi fechado para evitar reabertura imediata
+    sessionStorage.setItem('atendimento_just_closed', Date.now().toString());
+  }
+}, [isInAttendance, attendanceChamado, atendimentoModalOpen]);
 
   // Limpar loading de ações
   useEffect(() => {
@@ -347,11 +362,15 @@ const Chamados: React.FC = () => {
   }, [actionLoading, isUserInAttendance, currentAttendance, getTimer, startAttendance]);
 
   const handleCloseModal = useCallback(() => {
+    console.log('🔄 Fechando modais...');
     setModalOpen(false);
     setDetailModalOpen(false);
     setAtendimentoModalOpen(false);
     setEditingChamado(null);
     setSelectedChamado(null);
+    
+    // NOVO: Marcar que modal foi fechado intencionalmente
+    sessionStorage.setItem('atendimento_just_closed', Date.now().toString()); 
   }, []);
 
   const formatDuration = useCallback((minutes: number) => {

@@ -9,6 +9,21 @@ export const useGlobalAttendance = () => {
   const lastLoadedChamadoId = useRef<number | null>(null);
   const isLoading = useRef(false);
 
+  // NOVO: Event listener para limpeza forçada
+  useEffect(() => {
+    const handleForceClean = () => {
+      console.log('🧹 Limpeza forçada do estado de atendimento');
+      setAttendanceChamado(null);
+      lastLoadedChamadoId.current = null;
+    };
+
+    window.addEventListener('forceCleanAttendance', handleForceClean);
+    
+    return () => {
+      window.removeEventListener('forceCleanAttendance', handleForceClean);
+    };
+  }, []);
+
   useEffect(() => {
     const loadAttendanceChamado = async () => {
       if (isUserInAttendance && currentAttendance) {
@@ -17,7 +32,6 @@ export const useGlobalAttendance = () => {
           return;
         }
 
-        // Evitar múltiplas chamadas simultâneas
         if (isLoading.current) {
           return;
         }
@@ -28,7 +42,6 @@ export const useGlobalAttendance = () => {
           
           const chamado = await ChamadoService.getChamado(currentAttendance.chamadoId);
           
-          // Verificar se ainda é relevante (pode ter mudado durante a requisição)
           if (isUserInAttendance && currentAttendance?.chamadoId === chamado.cha_id) {
             setAttendanceChamado(chamado);
             lastLoadedChamadoId.current = chamado.cha_id;
@@ -37,7 +50,6 @@ export const useGlobalAttendance = () => {
         } catch (error) {
           console.error('❌ Erro ao carregar chamado:', error);
           
-          // Retry após erro (apenas se ainda relevante)
           setTimeout(() => {
             if (isUserInAttendance && currentAttendance && !attendanceChamado) {
               console.log('🔄 Tentando recarregar chamado após erro...');
@@ -49,7 +61,7 @@ export const useGlobalAttendance = () => {
           isLoading.current = false;
         }
       } else if (!isUserInAttendance) {
-        // Limpar estado apenas se realmente não está em atendimento
+        // Limpeza IMEDIATA quando não está em atendimento
         if (attendanceChamado) {
           console.log('🧹 Limpando dados do chamado - usuário não está mais em atendimento');
           setAttendanceChamado(null);
@@ -59,7 +71,7 @@ export const useGlobalAttendance = () => {
     };
 
     loadAttendanceChamado();
-  }, [isUserInAttendance, currentAttendance?.chamadoId]); // Dependências otimizadas
+  }, [isUserInAttendance, currentAttendance?.chamadoId, attendanceChamado]);
 
   return {
     isInAttendance: isUserInAttendance,
