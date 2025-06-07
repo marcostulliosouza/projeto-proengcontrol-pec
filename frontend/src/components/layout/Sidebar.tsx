@@ -115,7 +115,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   onToggleCollapse,
   stats 
 }) => {
-  const { state, hasPermission } = useAuth();
+  const { hasPermission } = useAuth();
   const location = useLocation();
 
   const menuItems = createMenuItems();
@@ -180,36 +180,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
 
-        {/* User Info */}
-        <div className={`bg-secondary-50 border-b border-secondary-200 flex-shrink-0 ${
-          isCollapsed ? 'lg:p-2' : 'p-3'
-        }`}>
-          <div className={`flex items-center ${isCollapsed ? 'lg:justify-center lg:space-x-0' : 'space-x-3'}`}>
-            <div className={`bg-gradient-to-br from-primary-500 to-primary-600 rounded-lg flex items-center justify-center shadow-sm ${
-              isCollapsed ? 'w-8 h-8' : 'w-9 h-9'
-            }`}>
-              <span className={`text-white font-bold ${isCollapsed ? 'text-sm' : 'text-base'}`}>
-                {state.user?.nome.charAt(0) || 'U'}
-              </span>
-            </div>
-            
-            {/* Info do usuário - sempre mostrar quando expandido */}
-            {!isCollapsed && (
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-secondary-900 truncate">
-                  {state.user?.nome}
-                </p>
-                <p className="text-xs text-secondary-500 truncate">
-                  {state.user?.categoriaNome}
-                </p>
-                <div className="flex items-center mt-1">
-                  <div className="w-1.5 h-1.5 bg-green-500 rounded-full mr-1"></div>
-                  <span className="text-xs text-green-600 font-medium">Online</span>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+        
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto py-2 px-2">
