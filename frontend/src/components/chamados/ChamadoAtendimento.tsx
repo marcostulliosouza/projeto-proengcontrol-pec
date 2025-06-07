@@ -226,8 +226,8 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
       <Card title="Informações do Chamado">
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="form-label">DT:</label>
-            <p className="font-mono bg-gray-100 px-2 py-1 rounded">{chamado.cha_DT || 'Não informado'}</p>
+            <label className="form-label">Local:</label>
+            <p className="font-mono bg-gray-100 px-2 py-1 rounded">{chamado.local_chamado || 'Não informado'}</p>
           </div>
           <div>
             <label className="form-label">Cliente:</label>
