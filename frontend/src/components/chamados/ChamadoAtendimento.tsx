@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import React, { useState, useEffect } from 'react';
+// ChamadoAtendimento.tsx - SOLUÇÃO SIMPLIFICADA
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, Button, Modal } from '../ui';
 import { ChamadoService } from '../../services/chamadoService';
 import { useSocket } from '../../contexts/SocketContext';
@@ -25,25 +26,27 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
   const [showCancelarModal, setShowCancelarModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [realStartTime, setRealStartTime] = useState<Date | null>(null);
-  const [shouldClose, setShouldClose] = useState(false);
   const [showTransferirModal, setShowTransferirModal] = useState(false);
+
+  // NOVA: Flag para controlar se já processou o fechamento
+  const isProcessingClose = useRef(false);
 
   const { socket, cancelAttendance, currentAttendance, finishAttendance } = useSocket();
 
-  // Contador de caracteres (máximo 250 como no Python)
   const caracteresRestantes = 250 - descricaoAtendimento.length;
 
-  // Fechar modal quando shouldClose for true
-  useEffect(() => {
-    if (shouldClose) {
-      console.log('🔄 Fechando modal devido a shouldClose');
-      onCancel();
-    }
-  }, [shouldClose, onCancel]);
+  // Função de fechamento controlada
+  const handleClose = () => {
+    if (isProcessingClose.current) return;
+    
+    console.log('🔄 Fechando modal de atendimento');
+    isProcessingClose.current = true;
+    onCancel();
+  };
 
+  // Cleanup
   useEffect(() => {
     return () => {
-      // Limpar qualquer flag de transferência ao desmontar
       const keys = Object.keys(sessionStorage).filter(key => 
         key.startsWith('transferred_') || key.startsWith('received_transfer_')
       );
@@ -51,23 +54,23 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
     };
   }, []);
 
+  // Verificar transferência anterior
   useEffect(() => {
-    // Se este chamado foi transferido, fechar imediatamente
     const wasTransferred = sessionStorage.getItem(`transferred_${chamado.cha_id}`);
     if (wasTransferred) {
       console.log('🔄 Chamado foi transferido anteriormente, fechando modal');
-      setShouldClose(true);
       sessionStorage.removeItem(`transferred_${chamado.cha_id}`);
+      handleClose();
     }
   }, [chamado.cha_id]);
 
-  // Buscar tempo inicial do atendimento
+  // Inicializar timer
   useEffect(() => {
     const initializeTimer = async () => {
       try {
         console.log(`⏰ Inicializando timer para chamado ${chamado.cha_id}...`);
         
-        // PRIMEIRO: Verificar se há dados de transferência recebida
+        // Verificar dados de transferência PRIMEIRO
         const checkTransferData = () => {
           const transferKeys = Object.keys(sessionStorage).filter(key => 
             key.startsWith('received_transfer_') && key.includes(chamado.cha_id.toString())
@@ -90,7 +93,6 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
         const transferData = checkTransferData();
         
         if (transferData) {
-          // Usar dados da transferência
           const startTime = new Date(transferData.startTime);
           const now = new Date();
           const currentSeconds = Math.floor((now.getTime() - startTime.getTime()) / 1000);
@@ -98,9 +100,8 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
           setRealStartTime(startTime);
           setTimer(Math.max(0, currentSeconds));
           
-          console.log(`✅ Timer inicializado da transferência: ${currentSeconds}s desde ${transferData.startTime}`);
+          console.log(`✅ Timer inicializado da transferência: ${currentSeconds}s`);
           
-          // Limpar dados da transferência
           Object.keys(sessionStorage).forEach(key => {
             if (key.startsWith('received_transfer_') && key.includes(chamado.cha_id.toString())) {
               sessionStorage.removeItem(key);
@@ -109,7 +110,7 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
           return;
         }
         
-        // SEGUNDO: Buscar do backend sempre o tempo real
+        // Buscar do backend
         const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/v1';
         const response = await fetch(`${apiUrl}/chamados/atendimentos-ativos`);
         const data = await response.json();
@@ -130,13 +131,12 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
               setRealStartTime(startTime);
               const currentSeconds = Math.floor(diffInMs / 1000);
               setTimer(Math.max(0, currentSeconds));
-              console.log(`✅ Timer inicializado do backend: ${currentSeconds}s desde ${myAttendance.atc_data_hora_inicio}`);
+              console.log(`✅ Timer inicializado do backend: ${currentSeconds}s`);
               return;
             }
           }
         }
         
-        // Último fallback - EVITAR USAR
         console.log('⚠️ Usando fallback - definindo início como agora');
         setRealStartTime(new Date());
         setTimer(0);
@@ -149,7 +149,7 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
     };
   
     initializeTimer();
-  }, [chamado.cha_id, currentAttendance?.userId]);
+  }, [chamado.cha_id]);
 
   // Timer local contínuo
   useEffect(() => {
@@ -163,7 +163,7 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
     return () => clearInterval(interval);
   }, [realStartTime]);
 
-  // Escutar eventos do socket para fechamento automático
+  // Socket listeners - SIMPLIFICADO
   useEffect(() => {
     if (!socket) return;
 
@@ -171,7 +171,7 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
       console.log('✅ Socket: Atendimento finalizado recebido', data);
       if (data.chamadoId === chamado.cha_id) {
         console.log('✅ Meu atendimento finalizado - fechando modal');
-        setShouldClose(true);
+        handleClose();
       }
     };
 
@@ -179,103 +179,79 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
       console.log('🚫 Socket: Atendimento cancelado recebido', data);
       if (data.chamadoId === chamado.cha_id) {
         console.log('🚫 Meu atendimento cancelado - fechando modal');
-        setShouldClose(true);
+        handleClose();
       }
-    };
-
-    // Eventos pessoais
-    const handleMyAttendanceFinished = () => {
-      console.log('✅ Socket: Meu atendimento finalizado (evento pessoal)');
-      setShouldClose(true);
-    };
-
-    const handleMyAttendanceCancelled = () => {
-      console.log('🚫 Socket: Meu atendimento cancelado (evento pessoal)');
-      setShouldClose(true);
     };
 
     const handleTransferredOut = (data: { chamadoId: number; userId: number; timestamp: string }) => {
       console.log('🔄 Socket: Chamado transferido (saída) recebido', data);
       if (data.chamadoId === chamado.cha_id && data.userId === currentAttendance?.userId) {
-        console.log('🔄 Meu chamado foi transferido - fechando modal IMEDIATAMENTE');
+        console.log('🔄 Meu chamado foi transferido - fechando modal');
         
-        // IMPORTANTE: Fechar modal IMEDIATAMENTE sem aguardar
-        setShouldClose(true);
-        onCancel(); // Força fechamento
-        
-        // Marcar como transferido
         sessionStorage.setItem(`transferred_${data.chamadoId}`, JSON.stringify({
           transferred: true,
           timestamp: data.timestamp
         }));
-      }
-    };
-  
-
-    // Escutar atualizações de timers para detectar remoção
-    const handleTimersSync = (timersData: { chamadoId: number; userId: number }[]) => {
-      if (!Array.isArray(timersData)) return;
-      
-      const meuTimer = timersData.find(timer => 
-        timer.chamadoId === chamado.cha_id && timer.userId === currentAttendance?.userId
-      );
-      
-      if (!meuTimer) {
-        console.log('⏰ Meu timer não existe mais - chamado finalizado/cancelado');
-        setShouldClose(true);
+        
+        handleClose();
       }
     };
 
+    // Registrar apenas os eventos essenciais
     socket.on('user_finished_attendance', handleAttendanceFinished);
     socket.on('user_cancelled_attendance', handleAttendanceCancelled);
     socket.on('user_transferred_out', handleTransferredOut);
-    socket.on('attendance_finished', handleMyAttendanceFinished);
-    socket.on('attendance_cancelled', handleMyAttendanceCancelled);
-    socket.on('timers_sync', handleTimersSync);
-    socket.on('transferred_out', handleTransferredOut);
+    socket.on('attendance_finished', () => handleAttendanceFinished({ chamadoId: chamado.cha_id }));
+    socket.on('attendance_cancelled', () => handleAttendanceCancelled({ chamadoId: chamado.cha_id }));
 
     return () => {
       socket.off('user_finished_attendance', handleAttendanceFinished);
       socket.off('user_cancelled_attendance', handleAttendanceCancelled);
       socket.off('user_transferred_out', handleTransferredOut);
-      socket.off('attendance_finished', handleMyAttendanceFinished);
-      socket.off('attendance_cancelled', handleMyAttendanceCancelled);
-      socket.off('timers_sync', handleTimersSync);
-      socket.off('transferred_out', handleTransferredOut);
+      socket.off('attendance_finished');
+      socket.off('attendance_cancelled');
     };
-  }, [socket, chamado.cha_id, currentAttendance?.userId, shouldClose, onCancel]);
+  }, [socket, chamado.cha_id, currentAttendance?.userId]);
 
+  // Event listeners customizados - SIMPLIFICADO
   useEffect(() => {
     // Verificar se transferência foi completada
     const transferCompleted = sessionStorage.getItem(`transfer_completed_${chamado.cha_id}`);
     if (transferCompleted) {
-      console.log('✅ Transferência completada detectada - fechando modal IMEDIATAMENTE');
+      console.log('✅ Transferência completada detectada - fechando modal');
       sessionStorage.removeItem(`transfer_completed_${chamado.cha_id}`);
-      setShouldClose(true);
-      onCancel(); // Força fechamento
+      handleClose();
       return;
     }
-  }, [chamado.cha_id, onCancel]);
 
-  // Novo: detector de transferência completada
-  useEffect(() => {
     const handleTransferCompleted = (event: CustomEvent) => {
       const { chamadoId } = event.detail;
       console.log('✅ Evento transferência completada:', chamadoId);
       
       if (chamadoId === chamado.cha_id) {
-        console.log('✅ Minha transferência completada - fechando modal IMEDIATAMENTE');
-        setShouldClose(true);
-        onCancel();
+        console.log('✅ Minha transferência completada - fechando modal');
+        handleClose();
+      }
+    };
+
+    const handleChamadoFinalizado = (event: CustomEvent) => {
+      const { chamadoId } = event.detail;
+      console.log(`🎯 Evento customizado: chamado ${chamadoId} finalizado`);
+      
+      if (chamadoId === chamado.cha_id) {
+        console.log('✅ Meu chamado finalizado - fechando modal');
+        handleClose();
       }
     };
 
     window.addEventListener('transferCompleted', handleTransferCompleted as EventListener);
+    window.addEventListener('chamadoFinalizado', handleChamadoFinalizado as EventListener);
     
     return () => {
       window.removeEventListener('transferCompleted', handleTransferCompleted as EventListener);
+      window.removeEventListener('chamadoFinalizado', handleChamadoFinalizado as EventListener);
     };
-  }, [chamado.cha_id, onCancel]);
+  }, [chamado.cha_id]);
 
   const formatTimer = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
@@ -300,31 +276,34 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
       alert('Descrição deve ter no máximo 250 caracteres');
       return;
     }
-
+  
     try {
       setLoading(true);
       console.log(`🏁 Finalizando chamado ${chamado.cha_id} com detrator ${selectedDetrator}`);
       
-      // Notificar o socket Antes de finalizar via API
-      finishAttendance();
-
-      // Finalizar usando detrator
+      // 1. Finalizar usando detrator
       await ChamadoService.finalizarChamado(chamado.cha_id, selectedDetrator, descricaoAtendimento.trim());
       
       console.log(`✅ Chamado finalizado com sucesso via API`);
-
-      // fechar modal de confirmação
+  
+      // 2. Fechar modal de confirmação
       setShowFinalizarModal(false);
-
-      // Buscar chamado atualizado
+  
+      // 3. Notificar o socket DEPOIS da finalização no banco
+      finishAttendance();
+  
+      // 4. Buscar chamado atualizado
       const updatedChamado = await ChamadoService.getChamado(chamado.cha_id);
             
-      // Notificar componente pai
+      // 5. Notificar componente pai
       onFinish(updatedChamado);
       
-      // FORÇAR fechamento do modal principal
-      console.log('🔄 Forçando fechamento do modal principal');
-      onCancel();
+      // 6. Disparar evento customizado para forçar atualização da lista
+      window.dispatchEvent(new CustomEvent('chamadoFinalizado', { 
+        detail: { chamadoId: chamado.cha_id, status: 3 } 
+      }));
+
+      // 7. NÃO chamar handleClose aqui - deixar os event listeners fazerem isso
       
     } catch (error) {
       console.error('Erro ao finalizar chamado:', error);
@@ -347,10 +326,7 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
       // Cancelar via socket
       cancelAttendance(chamado.cha_id);
       
-      // Agendar fechamento
-      setTimeout(() => {
-        setShouldClose(true);
-      }, 1000);
+      // NÃO chamar handleClose aqui - deixar os event listeners fazerem isso
       
     } catch (error) {
       console.error('Erro ao cancelar atendimento:', error);
@@ -361,22 +337,17 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
 
   const getTimerColor = () => {
     if (timer < 0) return 'text-blue-600'; 
-    if (timer > 30 * 60) return 'text-red-600'; // Mais de 30 minutos
-    if (timer > 15 * 60) return 'text-yellow-600'; // Mais de 15 minutos
-    return 'text-blue-600'; // Normal
+    if (timer > 30 * 60) return 'text-red-600';
+    if (timer > 15 * 60) return 'text-yellow-600';
+    return 'text-blue-600';
   };
 
   const getTimerBackgroundColor = () => {
-    if (timer < 0) return 'bg-blue-50 border-blue-200'; // Timer negativo
+    if (timer < 0) return 'bg-blue-50 border-blue-200';
     if (timer > 30 * 60) return 'bg-red-50 border-red-200';
     if (timer > 15 * 60) return 'bg-yellow-50 border-yellow-200';
     return 'bg-blue-50 border-blue-200';
   };
-
-  // Não renderizar se deve fechar
-  if (shouldClose) {
-    return null;
-  }
 
   return (
     <div className="space-y-6">
@@ -436,7 +407,6 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
       {/* Finalizar Atendimento */}
       <Card title="Finalizar Chamado">
         <div className="space-y-4">
-          {/* Seletor de Detrator */}
           <SeletorDetrator
             tipoChamadoId={chamado.cha_tipo}
             selectedDetrator={selectedDetrator}
@@ -444,7 +414,6 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
             disabled={loading}
           />
           
-          {/* Campo de Ação Realizada */}
           <div>
             <div className="flex justify-between items-center mb-1">
               <label className="form-label">Ação Realizada</label>
@@ -613,7 +582,8 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
           </div>
         </Modal>
       )}
-      {/* Modal de Transferencia de Chamado*/}
+
+      {/* Modal de Transferencia */}
       {showTransferirModal && (
         <TransferirChamadoModal
           isOpen={true}
@@ -621,7 +591,7 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
           chamado={chamado}
           onTransfer={() => {
             setShowTransferirModal(false);
-            setShouldClose(true); // Fechar modal de atendimento
+            // NÃO chamar handleClose aqui - deixar os event listeners fazerem isso
           }}
         />
       )}

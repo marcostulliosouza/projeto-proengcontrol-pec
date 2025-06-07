@@ -98,6 +98,7 @@ export interface Chamado extends Record<string, unknown> {
   cha_visualizado: number;
   cha_plano: number;
   // Campos relacionados
+  local_chamado?: string;
   tipo_chamado?: string;
   status_chamado?: string;
   cliente_nome?: string;

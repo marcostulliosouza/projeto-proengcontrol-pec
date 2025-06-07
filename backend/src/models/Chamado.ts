@@ -142,6 +142,52 @@ export class ChamadoModel {
       `;
 
       // Query principal - SIMPLIFICADA
+      // const dataQuery = `
+      //   SELECT 
+      //     c.cha_id,
+      //     c.cha_operador,
+      //     c.cha_tipo,
+      //     c.cha_cliente,
+      //     c.cha_produto,
+      //     c.cha_DT,
+      //     c.cha_status,
+      //     c.cha_descricao,
+      //     c.cha_plano,
+      //     c.cha_data_hora_abertura,
+      //     c.cha_data_hora_atendimento,
+      //     c.cha_data_hora_termino,
+      //     c.cha_acao,
+      //     c.cha_visualizado,
+      //     c.cha_local,
+          
+      //     -- Campos relacionados básicos
+      //     tc.tch_descricao AS tipo_chamado,
+      //     sc.stc_descricao AS status_chamado,
+      //     cl.cli_nome AS cliente_nome,
+      //     p.pro_nome AS produto_nome,
+      //     loc.loc_nome AS local_chamado,
+      //     ac.ach_descricao AS acao_descricao,
+          
+      //     -- Campos calculados
+      //     TIMESTAMPDIFF(MINUTE, c.cha_data_hora_abertura, NOW()) AS duracao_total,
+      //     IF(c.cha_status > 1, TIMESTAMPDIFF(MINUTE, c.cha_data_hora_atendimento, NOW()), 0) AS duracao_atendimento
+
+      //   FROM chamados c
+      //   LEFT JOIN tipos_chamado tc ON c.cha_tipo = tc.tch_id
+      //   LEFT JOIN status_chamado sc ON c.cha_status = sc.stc_id
+      //   LEFT JOIN clientes cl ON c.cha_cliente = cl.cli_id
+      //   LEFT JOIN produtos p ON c.cha_produto = p.pro_id
+      //   LEFT JOIN local_chamado loc ON c.cha_local = loc.loc_id
+      //   LEFT JOIN acoes_chamados ac ON c.cha_acao = ac.ach_id
+        
+      //   ${whereClause}
+      //   ORDER BY 
+      //     c.cha_status DESC,
+      //     duracao_total DESC,
+      //     duracao_atendimento DESC
+      //   LIMIT ${pagination.limit} OFFSET ${pagination.offset}
+      // `;
+
       const dataQuery = `
         SELECT 
           c.cha_id,
@@ -168,9 +214,12 @@ export class ChamadoModel {
           loc.loc_nome AS local_chamado,
           ac.ach_descricao AS acao_descricao,
           
-          -- Campos calculados
+          -- Campos calculados (mantendo negativos)
           TIMESTAMPDIFF(MINUTE, c.cha_data_hora_abertura, NOW()) AS duracao_total,
-          IF(c.cha_status > 1, TIMESTAMPDIFF(MINUTE, c.cha_data_hora_atendimento, NOW()), 0) AS duracao_atendimento
+          IF(c.cha_status > 1, TIMESTAMPDIFF(MINUTE, c.cha_data_hora_atendimento, NOW()), 0) AS duracao_atendimento,
+          
+          -- Campo adicional para ordenação prioritária
+          CASE WHEN c.cha_data_hora_abertura <= NOW() THEN 0 ELSE 1 END AS ordenacao_prioritaria
 
         FROM chamados c
         LEFT JOIN tipos_chamado tc ON c.cha_tipo = tc.tch_id
@@ -182,8 +231,11 @@ export class ChamadoModel {
         
         ${whereClause}
         ORDER BY 
+          ordenacao_prioritaria,  -- Primeiro os ativos (tempo positivo), depois os futuros
+          c.cha_data_hora_abertura DESC,  -- Dentro de cada grupo, mais recentes primeiro
           c.cha_status DESC,
-          c.cha_data_hora_abertura DESC
+          duracao_total DESC,
+          duracao_atendimento DESC
         LIMIT ${pagination.limit} OFFSET ${pagination.offset}
       `;
 

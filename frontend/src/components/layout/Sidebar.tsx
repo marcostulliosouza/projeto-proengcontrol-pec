@@ -47,10 +47,16 @@ interface MenuItem {
   icon: React.ComponentType<{ className?: string }>;
   path: string;
   requiredCategory?: number[];
-  badge?: number;
+  getBadge?: (stats: GlobalStats) => number; 
 }
 
-const menuItems: MenuItem[] = [
+interface GlobalStats {
+  chamadosAbertos: number;
+  manutencoesPendentes: number;
+  dispositivosInativos: number;
+}
+
+const createMenuItems = (): MenuItem[] => [
   {
     id: 'dashboard',
     label: 'Dashboard',
@@ -62,19 +68,21 @@ const menuItems: MenuItem[] = [
     label: 'Dispositivos',
     icon: DevicesIcon,
     path: '/dispositivos',
+    getBadge: (stats) => stats.dispositivosInativos, // Badge para dispositivos inativos
   },
   {
     id: 'chamados',
     label: 'Suporte à Linha',
     icon: CallsIcon,
     path: '/chamados',
-    badge: 8,
+    getBadge: (stats) => stats.chamadosAbertos, // Badge para chamados abertos
   },
   {
     id: 'manutencao',
     label: 'Manutenção',
     icon: MaintenanceIcon,
     path: '/manutencao',
+    getBadge: (stats) => stats.manutencoesPendentes, // Badge para manutenções
   },
   {
     id: 'producao',
@@ -97,16 +105,20 @@ interface SidebarProps {
   isCollapsed: boolean;
   onClose: () => void;
   onToggleCollapse: () => void;
+  stats: GlobalStats;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
   isOpen, 
   isCollapsed, 
   onClose, 
-  onToggleCollapse 
+  onToggleCollapse,
+  stats 
 }) => {
   const { state, hasPermission } = useAuth();
   const location = useLocation();
+
+  const menuItems = createMenuItems();
 
   const filteredMenuItems = menuItems.filter(item => {
     if (!item.requiredCategory) return true;
@@ -141,7 +153,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 isCollapsed ? 'w-8 h-8' : 'w-9 h-9'
               }`}>
                 <span className={`text-primary-600 font-bold ${isCollapsed ? 'text-sm' : 'text-base'}`}>
-                  P
+                  PEC
                 </span>
               </div>
               
@@ -205,6 +217,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             {filteredMenuItems.map((item) => {
               const Icon = item.icon;
               const isActive = location.pathname === item.path;
+              const badge = item.getBadge ? item.getBadge(stats) : 0; // Calcular badge
               
               return (
                 <li key={item.id} className="relative group">
@@ -223,21 +236,33 @@ const Sidebar: React.FC<SidebarProps> = ({
                       }
                     `}
                   >
-                    {/* Ícone - tamanho fixo */}
-                    <Icon className="w-5 h-5 flex-shrink-0" />
+                    {/* Ícone com badge sobreposto quando colapsado */}
+                    <div className="relative flex-shrink-0">
+                      <Icon className="w-5 h-5" />
+                      {badge > 0 && isCollapsed && (
+                        <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">
+                          {badge > 99 ? '99+' : badge}
+                        </span>
+                      )}
+                    </div>
                     
-                    {/* Label - sempre mostrar quando expandido */}
+                    {/* Label e badge quando expandido */}
                     {!isCollapsed && (
-                      <span className="truncate flex-1">
-                        {item.label}
-                      </span>
-                    )}
-                    
-                    {/* Badge - apenas quando expandido */}
-                    {item.badge && !isCollapsed && (
-                      <span className="ml-auto bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-none">
-                        {item.badge}
-                      </span>
+                      <>
+                        <span className="truncate flex-1">
+                          {item.label}
+                        </span>
+                        
+                        {badge > 0 && (
+                          <span className={`ml-auto font-bold text-xs px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-none ${
+                            isActive 
+                              ? 'bg-white text-primary-600' 
+                              : 'bg-red-500 text-white'
+                          }`}>
+                            {badge > 99 ? '99+' : badge}
+                          </span>
+                        )}
+                      </>
                     )}
 
                     {/* Indicador ativo */}
@@ -246,14 +271,14 @@ const Sidebar: React.FC<SidebarProps> = ({
                     )}
                   </NavLink>
                   
-                  {/* Tooltip para modo colapsado */}
+                  {/* Tooltip para modo colapsado - ATUALIZADO com badge */}
                   {isCollapsed && (
                     <div className="hidden lg:group-hover:block absolute left-14 top-1/2 transform -translate-y-1/2 z-50">
                       <div className="bg-gray-900 text-white text-sm rounded-lg py-2 px-3 whitespace-nowrap shadow-xl">
                         {item.label}
-                        {item.badge && (
+                        {badge > 0 && (
                           <span className="ml-2 bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full">
-                            {item.badge}
+                            {badge > 99 ? '99+' : badge}
                           </span>
                         )}
                         <div className="absolute left-0 top-1/2 transform -translate-y-1/2 -translate-x-1 w-2 h-2 bg-gray-900 rotate-45"></div>

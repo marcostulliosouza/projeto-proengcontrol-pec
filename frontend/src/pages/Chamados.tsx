@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, Table, Button, Input, Select, Pagination, Modal } from '../components/ui';
 import { ChamadoService, type TipoChamado, type StatusChamado, type Cliente } from '../services/chamadoService';
 import { useSocket } from '../contexts/SocketContext';
@@ -43,12 +43,21 @@ const Chamados: React.FC = () => {
   // State para controlar ações em andamento
   const [actionLoading, setActionLoading] = useState<Set<number>>(new Set());
 
+  // Refs para evitar dependências circulares
+  const filtersRef = useRef(filters);
+  const paginationRef = useRef(pagination);
+  
+  // Atualizar refs quando states mudam
+  useEffect(() => {
+    filtersRef.current = filters;
+  }, [filters]);
+
+  useEffect(() => {
+    paginationRef.current = pagination;
+  }, [pagination]);
+
   // Hooks
-  const {
-    startAttendance,
-    isUserInAttendance,
-    currentAttendance
-  } = useSocket();
+  const { startAttendance, isUserInAttendance, currentAttendance, socket } = useSocket();
 
   const {
     chamados,
@@ -57,8 +66,118 @@ const Chamados: React.FC = () => {
     getTimer
   } = useChamadosRealTime(initialChamados);
 
-  // Hook simplificado
   const { isInAttendance, attendanceChamado } = useGlobalAttendance();
+
+  // FUNÇÃO loadChamados definida primeiro
+  const loadChamados = useCallback(async (page = 1, showLoading = true) => {
+    try {
+      if (showLoading) setLoading(true);
+      const response = await ChamadoService.getChamados(page, 10, filtersRef.current);
+      setInitialChamados(response.chamados);
+      setPagination(response.pagination);
+    } catch (error) {
+      console.error('Erro ao carregar chamados:', error);
+    } finally {
+      if (showLoading) setLoading(false);
+    }
+  }, []); // Sem dependências para evitar loops
+
+  // Handler para atualização de chamados
+  const handleChamadoUpdated = useCallback((updatedChamado: Chamado) => {
+    if (updatedChamado.cha_status === 3) {
+      // Se foi finalizado, remover da lista
+      setChamados(prev => prev.filter(c => c.cha_id !== updatedChamado.cha_id));
+      
+      // Recarregar para sincronizar
+      setTimeout(() => {
+        loadChamados(paginationRef.current.currentPage, false);
+      }, 500);
+    } else {
+      // Atualizar normalmente
+      setChamados(prev =>
+        prev.map(c => c.cha_id === updatedChamado.cha_id ? updatedChamado : c)
+      );
+    }
+  }, [setChamados, loadChamados]);
+
+  // Socket listeners - consolidados
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleChamadoFinalizado = (data: { chamadoId: number; userId?: number }) => {
+      console.log('✅ Chamado finalizado recebido:', data.chamadoId);
+      
+      // Remover chamado da lista IMEDIATAMENTE
+      setChamados(prev => prev.filter(chamado => chamado.cha_id !== data.chamadoId));
+      
+      // Recarregar dados após um delay para sincronizar com backend
+      setTimeout(() => {
+        console.log('🔄 Recarregando dados após finalização...');
+        loadChamados(paginationRef.current.currentPage, false);
+      }, 1000);
+    };
+
+    const handleChamadoCancelado = (data: { chamadoId: number; userId?: number }) => {
+      console.log('🚫 Chamado cancelado recebido:', data.chamadoId);
+      
+      // Atualizar status do chamado para aberto
+      setChamados(prev => prev.map(chamado =>
+        chamado.cha_id === data.chamadoId
+          ? { 
+            ...chamado, 
+            cha_status: 1,
+            colaborador_nome: undefined,
+            atc_colaborador: undefined
+          }
+          : chamado
+      ));
+    };
+
+    socket.on('user_finished_attendance', handleChamadoFinalizado);
+    socket.on('user_cancelled_attendance', handleChamadoCancelado);
+
+    return () => {
+      socket.off('user_finished_attendance', handleChamadoFinalizado);
+      socket.off('user_cancelled_attendance', handleChamadoCancelado);
+    };
+  }, [socket, setChamados, loadChamados]);
+
+  // Custom event listeners - consolidados
+  useEffect(() => {
+    const handleChamadoFinalizadoCustom = (event: CustomEvent) => {
+      const { chamadoId, status } = event.detail;
+      console.log(`🎯 Evento customizado: chamado ${chamadoId} finalizado`);
+      
+      if (status === 3) {
+        setChamados(prev => prev.filter(c => c.cha_id !== chamadoId));
+        setTimeout(() => {
+          loadChamados(paginationRef.current.currentPage, false);
+        }, 1000);
+      }
+    };
+
+    const handleTransferReceived = (event: CustomEvent) => {
+      const { chamadoId, preservedTime, transferredBy } = event.detail;
+      console.log(`🎯 Transferência recebida: ${chamadoId} (${preservedTime}s preservados) de ${transferredBy}`);
+      
+      // Recarregar dados IMEDIATAMENTE
+      loadChamados(paginationRef.current.currentPage, false);
+      
+      // FORÇAR abertura do modal após recarregar dados
+      setTimeout(() => {
+        console.log('🎯 Forçando abertura do modal de atendimento');
+        setAtendimentoModalOpen(true);
+      }, 1000);
+    };
+
+    window.addEventListener('chamadoFinalizado', handleChamadoFinalizadoCustom as EventListener);
+    window.addEventListener('transferReceived', handleTransferReceived as EventListener);
+    
+    return () => {
+      window.removeEventListener('chamadoFinalizado', handleChamadoFinalizadoCustom as EventListener);
+      window.removeEventListener('transferReceived', handleTransferReceived as EventListener);
+    };
+  }, [setChamados, loadChamados]);
 
   // Carregar dados auxiliares
   useEffect(() => {
@@ -80,69 +199,25 @@ const Chamados: React.FC = () => {
     loadAuxData();
   }, []);
 
-  // CORRIGIR: Definir loadChamados antes de usar
-  const loadChamados = useCallback(async (page = 1, showLoading = true) => {
-    try {
-      if (showLoading) setLoading(true);
-      const response = await ChamadoService.getChamados(page, 10, filters);
-      setInitialChamados(response.chamados);
-      setPagination(response.pagination);
-    } catch (error) {
-      console.error('Erro ao carregar chamados:', error);
-    } finally {
-      if (showLoading) setLoading(false);
-    }
-  }, [filters]);
-
-  // ADICIONAR: Listener para transferências recebidas
-  useEffect(() => {
-    const handleTransferReceived = (event: CustomEvent) => {
-      const { chamadoId, preservedTime, transferredBy } = event.detail;
-      console.log(`🎯 Transferência recebida: ${chamadoId} (${preservedTime}s preservados) de ${transferredBy}`);
-      
-      // Recarregar dados IMEDIATAMENTE
-      loadChamados(pagination.currentPage, false);
-      
-      // FORÇAR abertura do modal após recarregar dados
-      setTimeout(() => {
-        console.log('🎯 Forçando abertura do modal de atendimento');
-        setAtendimentoModalOpen(true);
-      }, 1000);
-    };
-  
-    window.addEventListener('transferReceived', handleTransferReceived as EventListener);
-    
-    return () => {
-      window.removeEventListener('transferReceived', handleTransferReceived as EventListener);
-    };
-  }, [pagination.currentPage, loadChamados]);
-
   // Auto-refresh
   useEffect(() => {
     const interval = setInterval(() => {
-      loadChamados(pagination.currentPage, false);
+      loadChamados(paginationRef.current.currentPage, false);
     }, 60000);
     return () => clearInterval(interval);
-  }, [pagination.currentPage, loadChamados]);
+  }, [loadChamados]);
 
-  // Carregar na inicialização
+  // Carregar na inicialização - usando useEffect separado para evitar dependências
   useEffect(() => {
     loadChamados();
   }, [loadChamados]);
 
-  // MELHORAR controle do modal de atendimento
+  // Recarregar quando filtros mudam
   useEffect(() => {
-    // Lógica para abrir/fechar modal baseado no estado
-    if (isInAttendance && attendanceChamado && !atendimentoModalOpen) {
-      console.log('🔄 Abrindo modal de atendimento - usuário em atendimento');
-      setAtendimentoModalOpen(true);
-    } else if (!isInAttendance && atendimentoModalOpen) {
-      console.log('🔄 Fechando modal - não está mais em atendimento');
-      setAtendimentoModalOpen(false);
-    }
-  }, [isInAttendance, attendanceChamado, atendimentoModalOpen]);
+    loadChamados(1);
+  }, [filters, loadChamados]);
 
-  // MELHORAR: useEffect do modal de atendimento
+  // Controle do modal de atendimento
   useEffect(() => {
     // Verificar transferências pendentes PRIMEIRO
     const checkPendingTransfer = () => {
@@ -160,7 +235,6 @@ const Chamados: React.FC = () => {
             }
           }
         } catch {
-          // CORRIGIR: Remover variável error não utilizada
           sessionStorage.removeItem(key);
         }
       }
@@ -182,24 +256,41 @@ const Chamados: React.FC = () => {
     }
   }, [isInAttendance, attendanceChamado, atendimentoModalOpen]);
 
-  const handleSearch = (value: string) => {
-    setFilters({ ...filters, search: value });
-  };
+  // Limpar loading de ações
+  useEffect(() => {
+    (window as any).clearActionLoading = (chamadoId: number) => {
+      console.log(`🧹 Limpando loading para chamado ${chamadoId}`);
+      setActionLoading(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(chamadoId);
+        return newSet;
+      });
+    };
 
-  const handleFilter = (key: keyof FilterState, value: string | number | undefined) => {
-    setFilters({ ...filters, [key]: value });
-  };
+    return () => {
+      delete (window as any).clearActionLoading;
+    };
+  }, []);
 
-  const handlePageChange = (page: number) => {
+  // Event handlers
+  const handleSearch = useCallback((value: string) => {
+    setFilters(prev => ({ ...prev, search: value }));
+  }, []);
+
+  const handleFilter = useCallback((key: keyof FilterState, value: string | number | undefined) => {
+    setFilters(prev => ({ ...prev, [key]: value }));
+  }, []);
+
+  const handlePageChange = useCallback((page: number) => {
     loadChamados(page);
-  };
+  }, [loadChamados]);
 
-  const handleNewChamado = () => {
+  const handleNewChamado = useCallback(() => {
     setEditingChamado(null);
     setModalOpen(true);
-  };
+  }, []);
 
-  const handleViewChamado = async (chamado: Chamado) => {
+  const handleViewChamado = useCallback(async (chamado: Chamado) => {
     try {
       const chamadoAtualizado = await ChamadoService.getChamado(chamado.cha_id);
       setSelectedChamado(chamadoAtualizado);
@@ -209,10 +300,10 @@ const Chamados: React.FC = () => {
       setSelectedChamado(chamado);
       setDetailModalOpen(true);
     }
-  };
+  }, []);
 
   // Função melhorada com debounce e feedback imediato
-  const handleIniciarAtendimento = async (chamado: Chamado) => {
+  const handleIniciarAtendimento = useCallback(async (chamado: Chamado) => {
     // Verificar se já está processando este chamado
     if (actionLoading.has(chamado.cha_id)) {
       console.log('🔄 Já processando este chamado...');
@@ -253,58 +344,31 @@ const Chamados: React.FC = () => {
         return newSet;
       });
     }, 5000);
-  };
+  }, [actionLoading, isUserInAttendance, currentAttendance, getTimer, startAttendance]);
 
-  // Adicionar useEffect para limpar loading quando recebe eventos
-  useEffect(() => {
-    // Função global para limpar loading
-    (window as any).clearActionLoading = (chamadoId: number) => {
-      console.log(`🧹 Limpando loading para chamado ${chamadoId}`);
-      setActionLoading(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(chamadoId);
-        return newSet;
-      });
-    };
-
-    return () => {
-      delete (window as any).clearActionLoading;
-    };
-  }, []);
-
-  const handleCloseModal = () => {
+  const handleCloseModal = useCallback(() => {
     setModalOpen(false);
     setDetailModalOpen(false);
     setAtendimentoModalOpen(false);
     setEditingChamado(null);
     setSelectedChamado(null);
-  };
+  }, []);
 
-  const handleChamadoUpdated = (updatedChamado: Chamado) => {
-    setChamados(prev =>
-      prev.map(c => c.cha_id === updatedChamado.cha_id ? updatedChamado : c)
-    );
-    // Recarregar dados para sincronizar
-    setTimeout(() => {
-      loadChamados(pagination.currentPage, false);
-    }, 1000);
-  };
-
-  const formatDuration = (minutes: number) => {
+  const formatDuration = useCallback((minutes: number) => {
     const hours = Math.floor(Math.abs(minutes) / 60);
     const mins = Math.abs(minutes) % 60;
     const sign = minutes < 0 ? '-' : '';
     return `${sign}${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
-  };
+  }, []);
 
   // Função melhorada para verificar se pode iniciar
-  const canStartAttendance = (chamado: Chamado) => {
+  const canStartAttendance = useCallback((chamado: Chamado) => {
     if (chamado.cha_status !== 1) return false;
-    if (actionLoading.has(chamado.cha_id)) return false; // Novo: verificar se está carregando
+    if (actionLoading.has(chamado.cha_id)) return false;
     if (getTimer(chamado.cha_id)) return false;
     if (isUserInAttendance) return false;
     return true;
-  };
+  }, [actionLoading, getTimer, isUserInAttendance]);
 
   const columns = [
     {
@@ -466,7 +530,15 @@ const Chamados: React.FC = () => {
         <span className="text-sm text-gray-900">{String(value || 'Não informado')}</span>
       )
     },
-     {
+    {
+      key: 'local_chamado',
+      label: 'Local',
+      className: 'w-40',
+      render: (value: unknown) => (
+        <span className="text-sm text-gray-700">{String(value || 'N/A')}</span>
+      )
+    },
+    {
       key: 'cliente_nome',
       label: 'Cliente',
       className: 'w-40',
@@ -779,12 +851,12 @@ const Chamados: React.FC = () => {
  
               {/* Cards de Informações Principais */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="bg-white p-3 rounded-lg border">
+                {/* <div className="bg-white p-3 rounded-lg border">
                   <div className="text-xs text-slate-500 font-medium">DT / Código</div>
                   <div className="font-mono text-sm font-bold text-slate-900">
                     {selectedChamado.cha_DT || 'Não informado'}
                   </div>
-                </div>
+                </div> */}
                 <div className="bg-white p-3 rounded-lg border">
                   <div className="text-xs text-slate-500 font-medium">Cliente</div>
                   <div className="text-sm font-semibold text-slate-900">
@@ -795,6 +867,12 @@ const Chamados: React.FC = () => {
                   <div className="text-xs text-slate-500 font-medium">Produto</div>
                   <div className="text-sm font-semibold text-slate-900">
                     {selectedChamado.produto_nome || 'N/A'}
+                  </div>
+                </div>
+                <div className="bg-white p-3 rounded-lg border">
+                  <div className="text-xs text-slate-500 font-medium">Local</div>
+                  <div className="text-sm font-semibold text-slate-900">
+                    {selectedChamado.local_chamado || 'N/A'}
                   </div>
                 </div>
                 <div className="bg-white p-3 rounded-lg border">
