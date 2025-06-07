@@ -158,8 +158,7 @@ const CustomSelect: React.FC<CustomSelectProps> = ({
           onClick={toggleDropdown}
         >
           <span className={`
-            flex-1 truncate transition-colors duration-150
-            ${selectedOption ? 'text-gray-900' : 'text-gray-400'}
+            flex-1 truncate transition-colors duration-150 text-gray-900
             ${selectedOption?.className || ''}
           `}>
             {selectedOption ? selectedOption.label : placeholder || 'Selecione uma opção'}
@@ -179,20 +178,6 @@ const CustomSelect: React.FC<CustomSelectProps> = ({
                 </svg>
               </button>
             )}
-            
-            {/* Seta */}
-            <svg 
-              className={`
-                w-4 h-4 text-gray-400 transition-transform duration-200
-                ${isOpen ? 'rotate-180' : ''}
-                ${disabled ? 'opacity-50' : ''}
-              `}
-              fill="none" 
-              stroke="currentColor" 
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
           </div>
         </div>
 
@@ -211,7 +196,7 @@ const CustomSelect: React.FC<CustomSelectProps> = ({
                   ref={inputRef}
                   type="text"
                   className="w-full pl-10 pr-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500 transition-colors"
-                  placeholder="Buscar detrator..."
+                  placeholder="Buscar item..."
                   value={searchTerm}
                   onChange={(e) => {
                     setSearchTerm(e.target.value);
@@ -243,7 +228,7 @@ const CustomSelect: React.FC<CustomSelectProps> = ({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
                   <p className="text-sm text-gray-500">
-                    Nenhum detrator encontrado
+                    Nenhum item encontrado
                   </p>
                   <p className="text-xs text-gray-400 mt-1">
                     Tente buscar com outros termos
@@ -282,7 +267,7 @@ const CustomSelect: React.FC<CustomSelectProps> = ({
             {filteredOptions.length > 0 && (
               <div className="px-3 py-2 bg-gray-50 border-t border-gray-100">
                 <p className="text-xs text-gray-500 text-center">
-                  {filteredOptions.length} {filteredOptions.length === 1 ? 'detrator encontrado' : 'detratores encontrados'}
+                  {filteredOptions.length} {filteredOptions.length === 1 ? 'item encontrado' : 'itens encontrados'}
                   {searchTerm && (
                     <span className="ml-1">
                       para "{searchTerm}"

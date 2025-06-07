@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Card, Table, Button, Input, Select, Pagination, Modal } from '../components/ui';
+import { Card, Table, Button, Input, Select, Pagination, Modal, CustomSelect } from '../components/ui';
 import { ChamadoService, type TipoChamado, type StatusChamado, type Cliente } from '../services/chamadoService';
 import { useSocket } from '../contexts/SocketContext';
 import { useChamadosRealTime } from '../hooks/useChamadosRealTime';
@@ -752,7 +752,7 @@ useEffect(() => {
               ...status.map(s => ({ value: s.stc_id, label: s.stc_descricao }))
             ]}
           />
-          <Select
+          <CustomSelect
             placeholder="Cliente"
             value={filters.cliente || ''}
             onChange={(value) => handleFilter('cliente', value === '' ? undefined : Number(value))}
