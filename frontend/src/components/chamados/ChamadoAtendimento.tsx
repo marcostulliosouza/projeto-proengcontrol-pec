@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useState, useEffect } from 'react';
 import { Card, Button, Modal } from '../ui';
 import { ChamadoService } from '../../services/chamadoService';
@@ -66,6 +67,40 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
       try {
         console.log(`⏰ Inicializando timer para chamado ${chamado.cha_id}...`);
         
+        // PRIMEIRO: Verificar se há dados preservados de transferência no evento
+        let preservedData: any = null;
+        
+        const handleTransferData = (event: Event) => {
+          const customEvent = event as CustomEvent<{
+            chamadoId: number;
+            preservedTime: number;
+            originalStartTime: string;
+          }>;
+          
+          if (customEvent.detail.chamadoId === chamado.cha_id) {
+            preservedData = customEvent.detail;
+            console.log('🔄 Dados preservados encontrados:', preservedData);
+          }
+        };
+        
+        // Escutar evento de transferência recebida (apenas uma vez)
+        window.addEventListener('transferReceived', handleTransferData as EventListener, { once: true });
+        
+        // Aguardar um pouco para capturar evento
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        window.removeEventListener('transferReceived', handleTransferData as EventListener);
+        
+        if (preservedData) {
+          console.log(`⏰ Usando tempo preservado: ${preservedData.preservedTime}s`);
+          const startTime = new Date(preservedData.originalStartTime);
+          setRealStartTime(startTime);
+          setTimer(preservedData.preservedTime);
+          return;
+        }
+        
+        // Rest of your code remains the same...
+        // FALLBACK: Buscar do backend
         const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/v1';
         const response = await fetch(`${apiUrl}/chamados/atendimentos-ativos`);
         const data = await response.json();
@@ -82,18 +117,17 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
             const now = new Date();
             const diffInMs = now.getTime() - startTime.getTime();
             
-            // Validar se a data não é futura ou muito antiga
-            if (diffInMs > 0 && diffInMs < (24 * 60 * 60 * 1000)) { // Menor que 24 horas
+            if (diffInMs > 0 && diffInMs < (24 * 60 * 60 * 1000)) {
               setRealStartTime(startTime);
               const currentSeconds = Math.floor(diffInMs / 1000);
               setTimer(Math.max(0, currentSeconds));
-              console.log(`✅ Timer inicializado: ${currentSeconds}s (início: ${startTime.toLocaleTimeString()})`);
+              console.log(`✅ Timer inicializado do backend: ${currentSeconds}s`);
               return;
             }
           }
         }
         
-        // Fallback: usar hora atual
+        // Último fallback
         console.log('⚠️ Usando fallback - definindo início como agora');
         setRealStartTime(new Date());
         setTimer(0);
@@ -103,7 +137,7 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
         setTimer(0);
       }
     };
-
+  
     initializeTimer();
   }, [chamado.cha_id, currentAttendance?.userId]);
 
@@ -153,13 +187,20 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
     const handleTransferredOut = (data: { chamadoId: number; userId: number; timestamp: string }) => {
       console.log('🔄 Socket: Chamado transferido (saída) recebido', data);
       if (data.chamadoId === chamado.cha_id && data.userId === currentAttendance?.userId) {
-        console.log('🔄 Meu chamado foi transferido - fechando modal DEFINITIVAMENTE');
+        console.log('🔄 Meu chamado foi transferido - fechando modal IMEDIATAMENTE');
         
-        // IMPORTANTE: Marcar como transferido para evitar reabertura
-        sessionStorage.setItem(`transferred_${data.chamadoId}`, 'true');
+        // IMPORTANTE: Fechar modal IMEDIATAMENTE sem aguardar
         setShouldClose(true);
+        onCancel(); // Força fechamento
+        
+        // Marcar como transferido
+        sessionStorage.setItem(`transferred_${data.chamadoId}`, JSON.stringify({
+          transferred: true,
+          timestamp: data.timestamp
+        }));
       }
     };
+  
 
     // Escutar atualizações de timers para detectar remoção
     const handleTimersSync = (timersData: { chamadoId: number; userId: number }[]) => {
@@ -177,6 +218,7 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
 
     socket.on('user_finished_attendance', handleAttendanceFinished);
     socket.on('user_cancelled_attendance', handleAttendanceCancelled);
+    socket.on('user_transferred_out', handleTransferredOut);
     socket.on('attendance_finished', handleMyAttendanceFinished);
     socket.on('attendance_cancelled', handleMyAttendanceCancelled);
     socket.on('timers_sync', handleTimersSync);
@@ -185,12 +227,45 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
     return () => {
       socket.off('user_finished_attendance', handleAttendanceFinished);
       socket.off('user_cancelled_attendance', handleAttendanceCancelled);
+      socket.off('user_transferred_out', handleTransferredOut);
       socket.off('attendance_finished', handleMyAttendanceFinished);
       socket.off('attendance_cancelled', handleMyAttendanceCancelled);
       socket.off('timers_sync', handleTimersSync);
       socket.off('transferred_out', handleTransferredOut);
     };
-  }, [socket, chamado.cha_id, currentAttendance?.userId, shouldClose]);
+  }, [socket, chamado.cha_id, currentAttendance?.userId, shouldClose, onCancel]);
+
+  useEffect(() => {
+    // Verificar se transferência foi completada
+    const transferCompleted = sessionStorage.getItem(`transfer_completed_${chamado.cha_id}`);
+    if (transferCompleted) {
+      console.log('✅ Transferência completada detectada - fechando modal IMEDIATAMENTE');
+      sessionStorage.removeItem(`transfer_completed_${chamado.cha_id}`);
+      setShouldClose(true);
+      onCancel(); // Força fechamento
+      return;
+    }
+  }, [chamado.cha_id, onCancel]);
+
+  // Novo: detector de transferência completada
+  useEffect(() => {
+    const handleTransferCompleted = (event: CustomEvent) => {
+      const { chamadoId } = event.detail;
+      console.log('✅ Evento transferência completada:', chamadoId);
+      
+      if (chamadoId === chamado.cha_id) {
+        console.log('✅ Minha transferência completada - fechando modal IMEDIATAMENTE');
+        setShouldClose(true);
+        onCancel();
+      }
+    };
+
+    window.addEventListener('transferCompleted', handleTransferCompleted as EventListener);
+    
+    return () => {
+      window.removeEventListener('transferCompleted', handleTransferCompleted as EventListener);
+    };
+  }, [chamado.cha_id, onCancel]);
 
   const formatTimer = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);

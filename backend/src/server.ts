@@ -35,7 +35,14 @@ const io = new SocketServer(server, {
   }
 });
 
+const temposPreservados = new Map<number, {
+  tempoAcumulado: number;
+  startTimeOriginal: string;
+  ultimaAtualizacao: Date;
+}>();
+
 app.set('io', io);
+app.set('temposPreservados', temposPreservados);
 
 // Middleware de segurança
 app.use(helmet());
@@ -94,6 +101,17 @@ setInterval(async () => {
     console.error('Erro na sincronização automática:', error);
   }
 }, 5000); // A cada 5 segundos
+
+// Limpar cache periodicamente
+setInterval(() => {
+  const agora = new Date();
+  for (const [chamadoId, dados] of temposPreservados.entries()) {
+    // Remover entradas antigas (mais de 1 hora)
+    if (agora.getTime() - dados.ultimaAtualizacao.getTime() > 3600000) {
+      temposPreservados.delete(chamadoId);
+    }
+  }
+}, 300000); // A cada 5 minutos
 
 // Limpeza automática a cada 2 minutos
 setInterval(async () => {
@@ -198,61 +216,69 @@ io.on('connection', (socket) => {
 
   // NOVO: Transferir atendimento
   socket.on('transfer_attendance', async (data) => {
-  const { chamadoId, antigoColaboradorId, novoColaboradorId } = data;
-  
-  try {
-    console.log(`🔄 Socket: Processando transferência - Chamado ${chamadoId}: ${antigoColaboradorId} → ${novoColaboradorId}`);
+    const { chamadoId, antigoColaboradorId, novoColaboradorId } = data;
     
-    const antigoUser = activeUsers.get(socket.id);
-    const novoUserEntry = Array.from(activeUsers.values()).find(user => user.id === novoColaboradorId);
-    
-    if (!novoUserEntry) {
-      socket.emit('transfer_error', { message: 'Usuário destino não está online', chamadoId });
-      return;
-    }
-    
-    const timestamp = new Date().toISOString();
-    
-    // 1. PRIMEIRO: Notificar quem transferiu para fechar modal
-    socket.emit('user_transferred_out', {
-      chamadoId,
-      userId: antigoColaboradorId,
-      timestamp
-    });
-    
-    // 2. SEGUNDO: Aguardar um pouco e notificar quem recebeu
-    setTimeout(() => {
-      io.to(novoUserEntry.socketId).emit('user_transferred_in', {
+    try {
+      console.log(`🔄 Socket: Processando transferência - Chamado ${chamadoId}: ${antigoColaboradorId} → ${novoColaboradorId}`);
+      
+      const antigoUser = activeUsers.get(socket.id);
+      const novoUserEntry = Array.from(activeUsers.values()).find(user => user.id === novoColaboradorId);
+      
+      if (!novoUserEntry) {
+        socket.emit('transfer_error', { message: 'Usuário destino não está online', chamadoId });
+        return;
+      }
+      
+      // NOVO: Buscar dados do atendimento atual para preservar tempo
+      const atendimentoAtual = await AtendimentoAtivoModel.buscarPorChamado(chamadoId);
+      if (!atendimentoAtual) {
+        socket.emit('transfer_error', { message: 'Atendimento não encontrado', chamadoId });
+        return;
+      }
+      
+      // Calcular tempo já decorrido
+      const tempoJaDecorrido = Math.floor((new Date().getTime() - new Date(atendimentoAtual.atc_data_hora_inicio).getTime()) / 1000);
+      const startTimeOriginal = atendimentoAtual.atc_data_hora_inicio;
+      
+      const timestamp = new Date().toISOString();
+      
+      // CORRIGIR: Sequência de eventos mais fluida
+      
+      // 1. IMEDIATAMENTE: Fechar modal de quem transferiu
+      socket.emit('transfer_completed', {
         chamadoId,
-        userId: novoColaboradorId,
-        userName: novoUserEntry.nome,
-        startTime: timestamp,
-        motivo: 'transferred_in',
-        transferredBy: antigoUser?.nome || 'Usuário',
+        userId: antigoColaboradorId,
+        message: 'Chamado transferido com sucesso',
         timestamp
       });
       
-      // 3. TERCEIRO: Broadcast geral para atualizar timers
+      // 2. IMEDIATAMENTE: Abrir modal para quem recebeu COM TEMPO PRESERVADO
+      io.to(novoUserEntry.socketId).emit('transfer_received', {
+        chamadoId,
+        userId: novoColaboradorId,
+        userName: novoUserEntry.nome,
+        startTime: startTimeOriginal, // USAR TEMPO ORIGINAL
+        tempoJaDecorrido, // TEMPO ACUMULADO
+        transferredBy: antigoUser?.nome || 'Usuário',
+        timestamp,
+        autoOpen: true
+      });
+      
+      // 3. Broadcast para todos os outros usuários
       socket.broadcast.emit('user_started_attendance', {
         chamadoId,
         userId: novoColaboradorId,
         userName: novoUserEntry.nome,
-        startTime: timestamp,
+        startTime: startTimeOriginal, // PRESERVAR TEMPO ORIGINAL
         motivo: 'transferred_general'
       });
       
-      console.log(`✅ Socket: Eventos de transferência emitidos em sequência`);
-    }, 500);
-    
-    // 4. QUARTO: Atualizar broadcasts após delay maior
-    setTimeout(async () => {
-      await broadcastActiveAttendances();
-    }, 2000);
-    
-  } catch (error) {
-    console.error('❌ Erro ao processar transferência via socket:', error);
-    socket.emit('transfer_error', { message: 'Erro interno', chamadoId });
-  }
+      console.log(`✅ Socket: Transferência processada - tempo preservado: ${tempoJaDecorrido}s`);
+      
+    } catch (error) {
+      console.error('❌ Erro ao processar transferência via socket:', error);
+      socket.emit('transfer_error', { message: 'Erro interno', chamadoId });
+    }
   });
 
   // NOVO: Confirmar recebimento de transferência

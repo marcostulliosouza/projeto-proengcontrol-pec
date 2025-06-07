@@ -8,7 +8,6 @@ import { useGlobalAttendance } from '../hooks/useGlobalAttendance';
 import type { Chamado, FilterState, PaginationInfo } from '../types';
 import ChamadoForm from '../components/forms/ChamadoForm';
 import ChamadoAtendimento from '../components/chamados/ChamadoAtendimento';
-// import { useTransferDetection } from '../hooks/useTransferDetection';
 import TransferButton from '../components/chamados/TransferButton';
 
 const Chamados: React.FC = () => {
@@ -36,10 +35,6 @@ const Chamados: React.FC = () => {
   const [selectedChamado, setSelectedChamado] = useState<Chamado | null>(null);
   const [atendimentoModalOpen, setAtendimentoModalOpen] = useState(false);
 
-  // NOVO: State para controle automático de transferências
-  // const [autoOpenChamadoId, setAutoOpenChamadoId] = useState<number | null>(null);
-  // const [debugTransfer, setDebugTransfer] = useState<string>('');
-
   // Dados auxiliares
   const [tipos, setTipos] = useState<TipoChamado[]>([]);
   const [status, setStatus] = useState<StatusChamado[]>([]);
@@ -65,62 +60,6 @@ const Chamados: React.FC = () => {
   // Hook simplificado
   const { isInAttendance, attendanceChamado } = useGlobalAttendance();
 
-  // NOVO: Hook para detectar transferências
-  // useTransferDetection({
-  //   onTransferReceived: (chamadoId: number) => {
-  //     console.log(`🎯 Detectada transferência para chamado ${chamadoId}, preparando abertura automática`);
-  //     setDebugTransfer(`Recebido: ${chamadoId} às ${new Date().toLocaleTimeString()}`);
-  //     setAutoOpenChamadoId(chamadoId);
-  //   }
-  // });
-
-  // EFEITO MODIFICADO: Controle do modal de atendimento + transferências
-  useEffect(() => {
-    // Verificar se há transferência pendente
-    const checkPendingTransfer = () => {
-      const keys = Object.keys(sessionStorage).filter(key => key.startsWith('received_transfer_'));
-      for (const key of keys) {
-        try {
-          const transferData = JSON.parse(sessionStorage.getItem(key) || '{}');
-          if (transferData.chamadoId && isInAttendance && attendanceChamado?.cha_id === transferData.chamadoId) {
-            console.log(`🎯 Abrindo modal automaticamente para transferência ${transferData.chamadoId}`);
-            setAtendimentoModalOpen(true);
-            sessionStorage.removeItem(key);
-            return true;
-          }
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        } catch (error) {
-          sessionStorage.removeItem(key);
-        }
-      }
-      return false;
-    };
-
-    // Verificar transferências pendentes primeiro
-    if (checkPendingTransfer()) {
-      return;
-    }
-
-    // Lógica original para casos normais
-    if (isInAttendance && attendanceChamado && !atendimentoModalOpen) {
-      console.log('🔄 Abrindo modal de atendimento - usuário em atendimento');
-      setAtendimentoModalOpen(true);
-    } else if (!isInAttendance && atendimentoModalOpen) {
-      console.log('🔄 Fechando modal - não está mais em atendimento');
-      setAtendimentoModalOpen(false);
-    }
-  }, [isInAttendance, attendanceChamado, atendimentoModalOpen]);
-
-  // NOVO: Limpar debug após usar
-  // useEffect(() => {
-  //   if (autoOpenChamadoId && debugTransfer) {
-  //     const timer = setTimeout(() => {
-  //       setDebugTransfer('');
-  //     }, 5000);
-  //     return () => clearTimeout(timer);
-  //   }
-  // }, [autoOpenChamadoId, debugTransfer]);
-
   // Carregar dados auxiliares
   useEffect(() => {
     const loadAuxData = async () => {
@@ -141,7 +80,7 @@ const Chamados: React.FC = () => {
     loadAuxData();
   }, []);
 
-  // Carregar chamados
+  // CORRIGIR: Definir loadChamados antes de usar
   const loadChamados = useCallback(async (page = 1, showLoading = true) => {
     try {
       if (showLoading) setLoading(true);
@@ -155,6 +94,29 @@ const Chamados: React.FC = () => {
     }
   }, [filters]);
 
+  // ADICIONAR: Listener para transferências recebidas
+  useEffect(() => {
+    const handleTransferReceived = (event: CustomEvent) => {
+      const { chamadoId, preservedTime, transferredBy } = event.detail;
+      console.log(`🎯 Transferência recebida: ${chamadoId} (${preservedTime}s preservados) de ${transferredBy}`);
+      
+      // Recarregar dados IMEDIATAMENTE
+      loadChamados(pagination.currentPage, false);
+      
+      // FORÇAR abertura do modal após recarregar dados
+      setTimeout(() => {
+        console.log('🎯 Forçando abertura do modal de atendimento');
+        setAtendimentoModalOpen(true);
+      }, 1000);
+    };
+  
+    window.addEventListener('transferReceived', handleTransferReceived as EventListener);
+    
+    return () => {
+      window.removeEventListener('transferReceived', handleTransferReceived as EventListener);
+    };
+  }, [pagination.currentPage, loadChamados]);
+
   // Auto-refresh
   useEffect(() => {
     const interval = setInterval(() => {
@@ -167,6 +129,58 @@ const Chamados: React.FC = () => {
   useEffect(() => {
     loadChamados();
   }, [loadChamados]);
+
+  // MELHORAR controle do modal de atendimento
+  useEffect(() => {
+    // Lógica para abrir/fechar modal baseado no estado
+    if (isInAttendance && attendanceChamado && !atendimentoModalOpen) {
+      console.log('🔄 Abrindo modal de atendimento - usuário em atendimento');
+      setAtendimentoModalOpen(true);
+    } else if (!isInAttendance && atendimentoModalOpen) {
+      console.log('🔄 Fechando modal - não está mais em atendimento');
+      setAtendimentoModalOpen(false);
+    }
+  }, [isInAttendance, attendanceChamado, atendimentoModalOpen]);
+
+  // MELHORAR: useEffect do modal de atendimento
+  useEffect(() => {
+    // Verificar transferências pendentes PRIMEIRO
+    const checkPendingTransfer = () => {
+      const keys = Object.keys(sessionStorage).filter(key => key.startsWith('received_transfer_'));
+      for (const key of keys) {
+        try {
+          const transferData = JSON.parse(sessionStorage.getItem(key) || '{}');
+          if (transferData.chamadoId && transferData.autoOpen) {
+            // Verificar se é o chamado atual em atendimento
+            if (isInAttendance && attendanceChamado?.cha_id === transferData.chamadoId) {
+              console.log(`🎯 Abrindo modal automaticamente para transferência ${transferData.chamadoId}`);
+              setAtendimentoModalOpen(true);
+              sessionStorage.removeItem(key);
+              return true;
+            }
+          }
+        } catch {
+          // CORRIGIR: Remover variável error não utilizada
+          sessionStorage.removeItem(key);
+        }
+      }
+      return false;
+    };
+
+    // Verificar transferências pendentes primeiro
+    if (checkPendingTransfer()) {
+      return;
+    }
+
+    // Lógica original para casos normais
+    if (isInAttendance && attendanceChamado && !atendimentoModalOpen) {
+      console.log('🔄 Abrindo modal de atendimento - usuário em atendimento');
+      setAtendimentoModalOpen(true);
+    } else if (!isInAttendance && atendimentoModalOpen) {
+      console.log('🔄 Fechando modal - não está mais em atendimento');
+      setAtendimentoModalOpen(false);
+    }
+  }, [isInAttendance, attendanceChamado, atendimentoModalOpen]);
 
   const handleSearch = (value: string) => {
     setFilters({ ...filters, search: value });
@@ -196,6 +210,7 @@ const Chamados: React.FC = () => {
       setDetailModalOpen(true);
     }
   };
+
   // Função melhorada com debounce e feedback imediato
   const handleIniciarAtendimento = async (chamado: Chamado) => {
     // Verificar se já está processando este chamado
@@ -355,7 +370,7 @@ const Chamados: React.FC = () => {
                       <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
                       Você
                     </div>
-                    {/* NOVO: Botão de Transferir */}
+                    {/* Botão de Transferir */}
                     <TransferButton
                       chamado={item}
                       onTransfer={() => {
@@ -676,7 +691,7 @@ const Chamados: React.FC = () => {
           />
         </div>
       </Card>
-
+ 
       {/* Tabela */}
       <Card>
         <Table
@@ -692,7 +707,7 @@ const Chamados: React.FC = () => {
           />
         )}
       </Card>
-
+ 
       {/* Modal de Form */}
       <Modal
         isOpen={modalOpen}
@@ -709,7 +724,7 @@ const Chamados: React.FC = () => {
           onCancel={handleCloseModal}
         />
       </Modal>
-
+ 
       {/* Modal de Detalhes */}
       <Modal
         isOpen={detailModalOpen}
@@ -739,7 +754,7 @@ const Chamados: React.FC = () => {
                       selectedChamado.cha_status === 2 ? 'EM ANDAMENTO' : 'FINALIZADO'}
                     </span>
                   </div>
-
+ 
                   {/* Prioridade */}
                   <div className={`px-3 py-1 rounded-lg text-xs font-bold ${
                     selectedChamado.cha_plano === 1 ? 'bg-red-100 text-red-700 border border-red-300' :
@@ -750,7 +765,7 @@ const Chamados: React.FC = () => {
                     selectedChamado.cha_plano === 0 ? '🟡 FORA DO PLANO' : '🔵 MELHORIA'}
                   </div>
                 </div>
-
+ 
                 {/* Timer em Tempo Real (se ativo) */}
                 {getTimer(selectedChamado.cha_id) && (
                   <div className="text-right">
@@ -761,7 +776,7 @@ const Chamados: React.FC = () => {
                   </div>
                 )}
               </div>
-
+ 
               {/* Cards de Informações Principais */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="bg-white p-3 rounded-lg border">
@@ -790,7 +805,7 @@ const Chamados: React.FC = () => {
                 </div>
               </div>
             </div>
-
+ 
             {/* Linha do Tempo / Timeline - CORRIGIDA */}
             <div className="bg-white border border-slate-200 rounded-lg p-6">
               <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center">
@@ -834,7 +849,7 @@ const Chamados: React.FC = () => {
                       </div>
                     </div>
                   </div>
-
+ 
                   {/* Atendimento Iniciado */}
                   {selectedChamado.cha_data_hora_atendimento && (
                     <div className="flex items-start space-x-4">
@@ -940,76 +955,73 @@ const Chamados: React.FC = () => {
                       </div>
                     </div>
                   )}
-
+ 
                   {/* Finalização - TAMBÉM CORRIGIDA */}
                   {selectedChamado.cha_status === 3 && (
-  <div className="flex items-start space-x-4">
-    <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center border-4 border-white shadow-sm" style={{zIndex: 10, position: 'relative'}}>
-      <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    </div>
-    <div className="flex-1 min-w-0">
-      <div className="flex items-center justify-between">
-        <h4 className="text-sm font-semibold text-slate-900">Chamado Finalizado</h4>
-        {selectedChamado.cha_data_hora_termino && (
-          <span className="text-xs text-slate-500">
-            {new Date(selectedChamado.cha_data_hora_termino).toLocaleString('pt-BR')}
-          </span>
-        )}
-      </div>
-      
-      {/* Quem Finalizou - CORRIGIDO */}
-      {(() => {
-        // Para chamados finalizados, usar colaborador_nome diretamente
-        const colaboradorNome = selectedChamado.colaborador_nome;
-        
-        if (colaboradorNome && String(colaboradorNome).trim()) {
-          const isMyFinalization = selectedChamado.atc_colaborador === currentAttendance?.userId;
-          
-          return (
-            <div className="flex items-center space-x-2 mt-1">
-              <div className="w-6 h-6 bg-green-100 text-green-700 rounded-full flex items-center justify-center text-xs font-semibold">
-                {String(colaboradorNome).charAt(0).toUpperCase()}
-              </div>
-              <span className="text-sm font-medium text-slate-700">
-                Finalizado por {String(colaboradorNome)}
-              </span>
-              {isMyFinalization && (
-                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
-                  Você
-                </span>
-              )}
-            </div>
-          );
-        }
-        
-        // Debug para casos problemáticos
-        console.log('🔍 Debug - Finalização sem responsável:', {
-          colaborador_nome: selectedChamado.colaborador_nome,
-          atc_colaborador: selectedChamado.atc_colaborador,
-          cha_acao: selectedChamado.cha_acao,
-          acao_descricao: selectedChamado.acao_descricao
-        });
-        
-        return (
-          <div className="text-sm text-slate-500 mt-1">
-            <span className="bg-yellow-100 text-yellow-700 px-2 py-1 rounded text-xs">
-              ⚠️ Responsável pela finalização não identificado
-            </span>
-          </div>
-        );
-      })()}
-    </div>
-  </div>
-)}
+                    <div className="flex items-start space-x-4">
+                      <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center border-4 border-white shadow-sm" style={{zIndex: 10, position: 'relative'}}>
+                        <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-sm font-semibold text-slate-900">Chamado Finalizado</h4>
+                          {selectedChamado.cha_data_hora_termino && (
+                            <span className="text-xs text-slate-500">
+                              {new Date(selectedChamado.cha_data_hora_termino).toLocaleString('pt-BR')}
+                            </span>
+                          )}
+                        </div>
+                        
+                        {/* Quem Finalizou - CORRIGIDO */}
+                        {(() => {
+                          // Para chamados finalizados, usar colaborador_nome diretamente
+                          const colaboradorNome = selectedChamado.colaborador_nome;
+                          
+                          if (colaboradorNome && String(colaboradorNome).trim()) {
+                            const isMyFinalization = selectedChamado.atc_colaborador === currentAttendance?.userId;
+                            
+                            return (
+                              <div className="flex items-center space-x-2 mt-1">
+                                <div className="w-6 h-6 bg-green-100 text-green-700 rounded-full flex items-center justify-center text-xs font-semibold">
+                                  {String(colaboradorNome).charAt(0).toUpperCase()}
+                                </div>
+                                <span className="text-sm font-medium text-slate-700">
+                                  Finalizado por {String(colaboradorNome)}
+                                </span>
+                                {isMyFinalization && (
+                                  <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
+                                    Você
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          }
+                          
+                          // Debug para casos problemáticos
+                          console.log('🔍 Debug - Finalização sem responsável:', {
+                            colaborador_nome: selectedChamado.colaborador_nome,
+                            atc_colaborador: selectedChamado.atc_colaborador,
+                            cha_acao: selectedChamado.cha_acao,
+                            acao_descricao: selectedChamado.acao_descricao
+                          });
+                          
+                          return (
+                            <div className="text-sm text-slate-500 mt-1">
+                              <span className="bg-yellow-100 text-yellow-700 px-2 py-1 rounded text-xs">
+                                ⚠️ Responsável pela finalização não identificado
+                              </span>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
-
-            {/* Resto do modal mantém igual... */}
-            {/* Atendimento Ativo, Descrição, etc... */}
-            
+ 
             {/* Atendimento Ativo (apenas se em andamento) */}
             {getTimer(selectedChamado.cha_id) && (
               <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg">
@@ -1029,7 +1041,7 @@ const Chamados: React.FC = () => {
                 </div>
               </div>
             )}
-
+ 
             {/* Descrição do Problema */}
             <div className="bg-gray-50 p-4 rounded-lg">
               <h4 className="font-semibold text-gray-900 mb-3 flex items-center">
@@ -1044,7 +1056,7 @@ const Chamados: React.FC = () => {
                 </p>
               </div>
             </div>
-
+ 
             {/* Resolução (apenas se finalizado) */}
             {selectedChamado.cha_status === 3 && selectedChamado.acao_descricao && String(selectedChamado.acao_descricao).trim() && (
               <div className="bg-green-50 p-4 rounded-lg border border-green-200">
@@ -1093,7 +1105,7 @@ const Chamados: React.FC = () => {
                 </div>
               </div>
             )}
-
+ 
             {/* Botões de Ação */}
             <div className="flex justify-between items-center pt-4 border-t border-gray-200">
               <Button
@@ -1102,7 +1114,7 @@ const Chamados: React.FC = () => {
               >
                 Fechar
               </Button>
-              {/* */}
+              
               <div className="flex space-x-3">
                 {selectedChamado.cha_status === 1 && !isUserInAttendance && !getTimer(selectedChamado.cha_id) && (
                   <Button
@@ -1138,7 +1150,7 @@ const Chamados: React.FC = () => {
           </div>
         )}
       </Modal>
-
+ 
       {/* Modal de Atendimento */}
       <Modal
         isOpen={atendimentoModalOpen}
@@ -1160,6 +1172,6 @@ const Chamados: React.FC = () => {
       </Modal>
     </div>
   );
-};
-
-export default Chamados;
+ };
+ 
+ export default Chamados;

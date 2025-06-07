@@ -123,24 +123,39 @@ export const useChamadosRealTime = (initialChamados: Chamado[]) => {
       updateTimersDebounced(syncedTimers);
     };
 
-    const handleUserStarted = (data: UserAttendanceData) => {
-      console.log('🚀 Usuário iniciou:', data.chamadoId);
-
-      // Adiconar timer
+    const handleUserStarted = (data: UserAttendanceData & { motivo?: string }) => {
+      console.log('🚀 Usuário iniciou:', data.chamadoId, 'motivo:', data.motivo);
+    
+      // Para transferências, preservar o tempo original
+      let realStartTime: Date;
+      let initialSeconds = 0;
+      
+      if (data.motivo === 'transferred_general' && data.startTime) {
+        // USAR tempo original da transferência
+        realStartTime = new Date(data.startTime);
+        initialSeconds = Math.floor((new Date().getTime() - realStartTime.getTime()) / 1000);
+        console.log(`⏰ Timer de transferência: ${initialSeconds}s desde ${data.startTime}`);
+      } else {
+        // Novo atendimento
+        realStartTime = new Date(data.startTime);
+        initialSeconds = 0;
+      }
+    
+      // Adicionar timer
       setTimers(prev => {
         const filtered = prev.filter(timer => timer.chamadoId !== data.chamadoId);
         return [...filtered, {
           chamadoId: data.chamadoId,
-          seconds: 0,
+          seconds: Math.max(0, initialSeconds),
           startedAt: data.startTime,
           startedBy: data.userName,
           userId: data.userId,
           userName: data.userName,
-          realStartTime: new Date(data.startTime)
+          realStartTime
         }];
       });
-
-      // Atualizar status do chamado para em andamento
+    
+      // Atualizar chamados
       setChamados(prev => prev.map(chamado => 
         chamado.cha_id === data.chamadoId 
           ? { 
@@ -151,12 +166,12 @@ export const useChamadosRealTime = (initialChamados: Chamado[]) => {
           }
           : chamado
       ));
-
+    
       // Limpar loading
       if (window.clearActionLoading) {
         window.clearActionLoading(data.chamadoId);
       }
-  };
+    };
 
     const handleUserFinished = (data: UserFinishedData) => {
       console.log('✅ Usuário finalizou:', data.chamadoId);

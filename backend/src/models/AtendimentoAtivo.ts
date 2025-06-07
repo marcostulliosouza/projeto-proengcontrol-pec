@@ -372,7 +372,7 @@ export class AtendimentoAtivoModel {
   }
 
   // Transferir atendimento (baseado na lógica Python)
-  static async transferir(chamadoId: number, antigoColaboradorId: number, novoColaboradorId: number): Promise<boolean> {
+  static async transferir(chamadoId: number, antigoColaboradorId: number, novoColaboradorId: number): Promise<{ tempoPreservado: number; startTimeOriginal: string }> {
     const connection = await pool.getConnection();
     
     try {
@@ -385,40 +385,68 @@ export class AtendimentoAtivoModel {
         await connection.rollback();
         throw new Error('Chamado não está sendo atendido por você');
       }
-
+  
       // 2. Verificar se o novo colaborador já está atendendo algo
       const novoColaboradorAtivo = await this.buscarPorColaborador(novoColaboradorId);
       if (novoColaboradorAtivo) {
         await connection.rollback();
         throw new Error('Colaborador destino já está atendendo outro chamado');
       }
-
-      // 3. Finalizar atendimento do usuário antigo
+  
+      // 3. CALCULAR tempo total acumulado (incluindo transferências anteriores)
+      const tempoInicioOriginal = new Date(atendimentoAtivo.atc_data_hora_inicio);
+      const agora = new Date();
+      
+      // Se já tem tempo_decorrido (de transferências anteriores), somar com atual
+      const tempoBaseExistente = atendimentoAtivo.tempo_decorrido || 0;
+      const tempoAtualMs = agora.getTime() - tempoInicioOriginal.getTime();
+      const tempoAtualSegundos = Math.floor(tempoAtualMs / 1000);
+      
+      // IMPORTANTE: Se tempo_decorrido > tempoAtualSegundos, significa que há tempo acumulado
+      const tempoTotalPreservado = Math.max(tempoBaseExistente, tempoAtualSegundos);
+      
+      console.log(`⏰ Tempo a preservar: ${tempoTotalPreservado}s (base: ${tempoBaseExistente}s, atual: ${tempoAtualSegundos}s)`);
+  
+      // 4. Finalizar atendimento do usuário antigo
       const finalizarQuery = `
         UPDATE atendimentos_chamados 
         SET atc_data_hora_termino = NOW()
         WHERE atc_chamado = ? AND atc_colaborador = ? AND atc_data_hora_termino IS NULL
       `;
       await connection.execute(finalizarQuery, [chamadoId, antigoColaboradorId]);
-
-      // 4. Criar novo atendimento para o novo colaborador
+  
+      // 5. CRIAR novo atendimento com data ajustada para preservar tempo
+      // Calcular nova data de início que preserve o tempo total
+      const novaDataInicio = new Date(agora.getTime() - (tempoTotalPreservado * 1000));
+      
       const novoAtendimentoQuery = `
-        INSERT INTO atendimentos_chamados (atc_chamado, atc_colaborador, atc_data_hora_inicio)
-        VALUES (?, ?, NOW())
+        INSERT INTO atendimentos_chamados (
+          atc_chamado, 
+          atc_colaborador, 
+          atc_data_hora_inicio
+        ) VALUES (?, ?, ?)
       `;
-      await connection.execute(novoAtendimentoQuery, [chamadoId, novoColaboradorId]);
-
-      // 5. Atualizar data de atendimento do chamado
+      await connection.execute(novoAtendimentoQuery, [
+        chamadoId, 
+        novoColaboradorId, 
+        novaDataInicio.toISOString().slice(0, 19).replace('T', ' ')
+      ]);
+  
+      // 6. Atualizar data de atendimento do chamado (manter original ou atual)
       const atualizarChamadoQuery = `
         UPDATE chamados 
         SET cha_data_hora_atendimento = NOW()
         WHERE cha_id = ?
       `;
       await connection.execute(atualizarChamadoQuery, [chamadoId]);
-
+  
       await connection.commit();
-      console.log(`✅ Transferência concluída com sucesso`);
-      return true;
+      console.log(`✅ Transferência concluída - tempo preservado: ${tempoTotalPreservado}s`);
+      
+      return {
+        tempoPreservado: tempoTotalPreservado,
+        startTimeOriginal: novaDataInicio.toISOString()
+      };
       
     } catch (error) {
       await connection.rollback();
@@ -426,6 +454,42 @@ export class AtendimentoAtivoModel {
       throw error;
     } finally {
       connection.release();
+    }
+  }
+  
+  // ADICIONAR método para calcular tempo total incluindo transferências
+  static async calcularTempoTotal(chamadoId: number): Promise<number> {
+    try {
+      // Buscar TODOS os atendimentos deste chamado (incluindo finalizados)
+      const query = `
+        SELECT 
+          atc_data_hora_inicio,
+          atc_data_hora_termino,
+          TIMESTAMPDIFF(SECOND, atc_data_hora_inicio, 
+            COALESCE(atc_data_hora_termino, NOW())
+          ) as segundos_atendimento
+        FROM atendimentos_chamados 
+        WHERE atc_chamado = ?
+        ORDER BY atc_data_hora_inicio ASC
+      `;
+  
+      const results = await executeQuery(query, [chamadoId]);
+      
+      if (!Array.isArray(results) || results.length === 0) {
+        return 0;
+      }
+  
+      // Somar TODOS os tempos de atendimento
+      const tempoTotal = results.reduce((total: number, atendimento: any) => {
+        return total + (atendimento.segundos_atendimento || 0);
+      }, 0);
+  
+      console.log(`📊 Tempo total calculado para chamado ${chamadoId}: ${tempoTotal}s`);
+      return tempoTotal;
+      
+    } catch (error) {
+      console.error('Erro ao calcular tempo total:', error);
+      return 0;
     }
   }
 }

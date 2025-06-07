@@ -52,41 +52,47 @@ const TransferirChamadoModal: React.FC<TransferirChamadoModalProps> = ({
   };
 
   const handleTransferir = async () => {
-  if (!usuarioSelecionado || loading) return;
-
-  const usuarioDestino = usuariosOnline.find(u => u.id === usuarioSelecionado);
-  if (!usuarioDestino) return;
-
-  try {
-    setLoading(true);
-    
-    await ChamadoService.transferirChamado(
-      chamado.cha_id, 
-      usuarioSelecionado, 
-      usuarioDestino.nome
-    );
-
-    console.log(`✅ Chamado ${chamado.cha_id} transferido para ${usuarioDestino.nome}`);
-    
-    // Notificação de sucesso
-    showSuccessToast(
-      'Chamado Transferido',
-      `Chamado #${chamado.cha_id} transferido para ${usuarioDestino.nome}`
-    );
-
-    onTransfer();
-    onClose();
-  } catch (error) {
-    console.error('Erro ao transferir chamado:', error);
-    
-    // Notificação de erro
-    showErrorToast(
-      'Erro na Transferência',
-      'Não foi possível transferir o chamado. Tente novamente.'
-    );
-  } finally {
-    setLoading(false);
-  }
+    if (!usuarioSelecionado || loading) return;
+  
+    const usuarioDestino = usuariosOnline.find(u => u.id === usuarioSelecionado);
+    if (!usuarioDestino) return;
+  
+    try {
+      setLoading(true);
+      
+      // PRIMEIRO: Fazer transferência via API
+      await ChamadoService.transferirChamado(
+        chamado.cha_id, 
+        usuarioSelecionado, 
+        usuarioDestino.nome
+      );
+  
+      console.log(`✅ Chamado ${chamado.cha_id} transferido para ${usuarioDestino.nome}`);
+      
+      // SEGUNDO: Notificação de sucesso
+      showSuccessToast(
+        'Chamado Transferido',
+        `Chamado #${chamado.cha_id} transferido para ${usuarioDestino.nome}`
+      );
+  
+      // TERCEIRO: Fechar modal e notificar
+      onTransfer();
+      onClose();
+      
+      // QUARTO: Forçar atualização da página se necessário
+      setTimeout(() => {
+        window.location.reload(); // Forçar refresh se outros métodos falharem
+      }, 2000);
+      
+    } catch (error) {
+      console.error('Erro ao transferir chamado:', error);
+      showErrorToast(
+        'Erro na Transferência',
+        'Não foi possível transferir o chamado. Tente novamente.'
+      );
+    } finally {
+      setLoading(false);
+    }
   };
   
   const formatTempoOnline = (connectedAt: string) => {
