@@ -140,7 +140,9 @@ const ChamadoForm: React.FC<ChamadoFormProps> = ({
     if (permissions.isProduction()) {
       return tipos.filter(tipo => tipo.tch_id !== 5);
     }
-
+    if (permissions.isSupervisorOrAbove()){
+      return tipos.filter(tipo => tipo.tch_id);  
+    }
     return tipos.filter(tipo => tipo.tch_id === 5) ;
   }
 
