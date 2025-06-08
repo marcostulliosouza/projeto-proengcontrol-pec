@@ -1,8 +1,11 @@
 /* eslint-disable react-refresh/only-export-components */
+// SocketContext.tsx - FIXED: Prevent duplicate transfer events and improve debugging
+
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useAuth } from './AuthContext';
 import { useToast } from './ToastContext';
+
 interface AttendanceInfo {
   chamadoId: number;
   userId: number;
@@ -18,7 +21,7 @@ interface SocketContextType {
   startAttendance: (chamadoId: number) => Promise<AttendanceInfo | null>;
   cancelAttendance: (chamadoId: number) => void;
   finishAttendance: () => void;
-  transferAttendance: (chamadoId: number, novoColaboradorId: number) => void; // NOVO
+  transferAttendance: (chamadoId: number, novoColaboradorId: number) => void;
 }
 
 interface AtendimentoAtivoAPI {
@@ -45,9 +48,41 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
   const socketRef = useRef<Socket | null>(null);
   const isInitializing = useRef(false);
   const lastUserId = useRef<number | null>(null);
+  
+  // NOVO: Set para rastrear eventos de transferência já processados
+  const processedTransfers = useRef(new Set<string>());
 
   const { showSuccessToast } = useToast();
 
+  // NOVO: Função para gerar chave única de transferência
+  const generateTransferKey = (chamadoId: number, userId: number, timestamp: string) => {
+    return `transfer_${chamadoId}_${userId}_${new Date(timestamp).getTime()}`;
+  };
+
+  // NOVO: Função para limpar transferências antigas do cache
+  const cleanupOldTransfers = useCallback(() => {
+    const now = Date.now();
+    const keysToRemove: string[] = [];
+    
+    processedTransfers.current.forEach(key => {
+      // Remove transferências mais antigas que 5 minutos
+      const parts = key.split('_');
+      if (parts.length >= 4) {
+        const timestamp = parseInt(parts[3]);
+        if (now - timestamp > 5 * 60 * 1000) {
+          keysToRemove.push(key);
+        }
+      }
+    });
+    
+    keysToRemove.forEach(key => {
+      processedTransfers.current.delete(key);
+    });
+    
+    if (keysToRemove.length > 0) {
+      console.log(`🧹 Removed ${keysToRemove.length} old transfer keys from cache`);
+    }
+  }, []);
 
   // Verificar atendimento ativo via API - MEMOIZED
   const checkForActiveAttendance = useCallback(async () => {
@@ -122,7 +157,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       transports: ['websocket', 'polling'],
       timeout: 20000,
       autoConnect: true,
-      forceNew: true, // Força nova conexão
+      forceNew: true,
     });
 
     // Eventos de conexão
@@ -184,111 +219,40 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       alert(`Erro: ${data.reason}`);
     });
 
-    // Novo: novos eventos específicos para transferência
-    newSocket.on('transfer_completed', (data: { chamadoId: number; userId: number; message: string; timestamp: string }) => {
-      console.log('✅ Transferência completada:', data);
-      if (data.userId === authState.user?.id) {
-        console.log('✅ Minha transferência foi completada - limpando estado IMEDIATAMENTE');
-        
-        // Limpar estado IMEDIATAMENTE
-        setCurrentAttendance(null);
-        setIsUserInAttendance(false);
-        
-        // Marcar como transferido para fechar modal
-        sessionStorage.setItem(`transfer_completed_${data.chamadoId}`, JSON.stringify({
-          completed: true,
-          timestamp: data.timestamp,
-          message: data.message
-        }));
-        
-        // Notificação de sucesso
-        if (showSuccessToast) {
-          showSuccessToast('Transferência Concluída', data.message);
-        }
-      }
-    });
-
-    newSocket.on('transfer_received', (data: {
-      chamadoId: number;
-      userId: number;
-      userName: string;
-      startTime: string;
-      tempoJaDecorrido: number;
-      transferredBy: string;
-      timestamp: string;
-      autoOpen: boolean;
-    }) => {
-      console.log('🎯 Chamado recebido via transferência (com tempo preservado):', data);
-      if (data.userId === authState.user?.id) {
-        console.log('🎯 Configurando atendimento recebido com tempo preservado');
-        
-        // Configurar atendimento COM TEMPO PRESERVADO
-        const attendanceInfo: AttendanceInfo = {
-          chamadoId: data.chamadoId,
-          userId: data.userId,
-          userName: data.userName,
-          startTime: data.startTime // TEMPO ORIGINAL PRESERVADO
-        };
-        
-        setCurrentAttendance(attendanceInfo);
-        setIsUserInAttendance(true);
-        
-        // Marcar para abertura automática COM DADOS COMPLETOS
-        sessionStorage.setItem(`received_transfer_${data.chamadoId}`, JSON.stringify({
-          chamadoId: data.chamadoId,
-          startTime: data.startTime,
-          tempoJaDecorrido: data.tempoJaDecorrido,
-          transferredBy: data.transferredBy,
-          timestamp: data.timestamp,
-          autoOpen: data.autoOpen
-        }));
-        
-        // Disparar evento customizado para forçar atualização
-        window.dispatchEvent(new CustomEvent('transferReceived', { 
-          detail: { 
-            chamadoId: data.chamadoId,
-            preservedTime: data.tempoJaDecorrido,
-            originalStartTime: data.startTime
-          } 
-        }));
-        
-        // Notificação
-        if (showSuccessToast) {
-          showSuccessToast(
-            '🔔 Chamado Transferido Recebido!',
-            `Chamado #${data.chamadoId} de ${data.transferredBy} (${Math.floor(data.tempoJaDecorrido / 60)}min já decorridos)`
-          );
-        }
-      }
-    });
-
-    // Novo: eventos específicos para transferência
+    // FIXED: Eventos de transferência com prevenção de duplicação
     newSocket.on('transfer_completed', (data: { 
       chamadoId: number; 
       userId: number; 
       message: string; 
       timestamp: string 
     }) => {
-      console.log('✅ Transferência completada:', data);
-      if (data.userId === authState.user?.id) {
-        console.log('✅ Minha transferência foi completada - limpando estado IMEDIATAMENTE');
-        
-        // Limpar estado IMEDIATAMENTE
-        setCurrentAttendance(null);
-        setIsUserInAttendance(false);
-        
-        // Sinalizar para fechar modal
-        window.dispatchEvent(new CustomEvent('transferCompleted', { 
-          detail: { 
-            chamadoId: data.chamadoId,
-            message: data.message
-          } 
-        }));
-        
-        // Notificação
-        if (showSuccessToast) {
-          showSuccessToast('Transferência Concluída', data.message);
-        }
+      if (data.userId !== authState.user?.id) return;
+      
+      const transferKey = generateTransferKey(data.chamadoId, data.userId, data.timestamp);
+      
+      if (processedTransfers.current.has(transferKey)) {
+        console.log('🔄 Transfer completed já processado, ignorando...', transferKey);
+        return;
+      }
+      
+      processedTransfers.current.add(transferKey);
+      console.log('✅ Transferência completada (nova):', data);
+      
+      // Limpar estado IMEDIATAMENTE
+      setCurrentAttendance(null);
+      setIsUserInAttendance(false);
+      
+      // Disparar evento para fechar modal
+      window.dispatchEvent(new CustomEvent('transferCompleted', { 
+        detail: { 
+          chamadoId: data.chamadoId,
+          message: data.message
+        } 
+      }));
+      
+      // Notificação
+      if (showSuccessToast) {
+        showSuccessToast('Transferência Concluída', data.message);
       }
     });
 
@@ -302,45 +266,52 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       timestamp: string;
       autoOpen: boolean;
     }) => {
-      console.log('🎯 Chamado recebido via transferência:', data);
-      if (data.userId === authState.user?.id) {
-        console.log('🎯 Configurando atendimento recebido COM TEMPO PRESERVADO');
-        
-        // Configurar atendimento COM TEMPO PRESERVADO
-        const attendanceInfo: AttendanceInfo = {
+      if (data.userId !== authState.user?.id) return;
+      
+      const transferKey = generateTransferKey(data.chamadoId, data.userId, data.timestamp);
+      
+      if (processedTransfers.current.has(transferKey)) {
+        console.log('🔄 Transfer received já processado, ignorando...', transferKey);
+        return;
+      }
+      
+      processedTransfers.current.add(transferKey);
+      console.log('🎯 Chamado recebido via transferência (novo):', data);
+      
+      // Configurar atendimento COM TEMPO PRESERVADO
+      const attendanceInfo: AttendanceInfo = {
+        chamadoId: data.chamadoId,
+        userId: data.userId,
+        userName: data.userName,
+        startTime: data.startTime // TEMPO ORIGINAL
+      };
+      
+      setCurrentAttendance(attendanceInfo);
+      setIsUserInAttendance(true);
+      
+      console.log(`⏰ Atendimento configurado com tempo preservado: ${data.tempoJaDecorrido}s`);
+      
+      // Disparar evento para abrir modal COM DADOS PRESERVADOS
+      window.dispatchEvent(new CustomEvent('transferReceived', { 
+        detail: { 
           chamadoId: data.chamadoId,
-          userId: data.userId,
-          userName: data.userName,
-          startTime: data.startTime // TEMPO ORIGINAL
-        };
-        
-        setCurrentAttendance(attendanceInfo);
-        setIsUserInAttendance(true);
-        
-        console.log(`⏰ Atendimento configurado com tempo preservado: ${data.tempoJaDecorrido}s`);
-        
-        // Disparar evento para abrir modal COM DADOS PRESERVADOS
-        window.dispatchEvent(new CustomEvent('transferReceived', { 
-          detail: { 
-            chamadoId: data.chamadoId,
-            preservedTime: data.tempoJaDecorrido,
-            originalStartTime: data.startTime,
-            transferredBy: data.transferredBy,
-            userName: data.userName
-          } 
-        }));
-        
-        // Notificação
-        if (showSuccessToast) {
-          showSuccessToast(
-            '🔔 Chamado Recebido!',
-            `Chamado #${data.chamadoId} de ${data.transferredBy}`
-          );
-        }
+          preservedTime: data.tempoJaDecorrido,
+          originalStartTime: data.startTime,
+          transferredBy: data.transferredBy,
+          userName: data.userName
+        } 
+      }));
+      
+      // Notificação
+      if (showSuccessToast) {
+        showSuccessToast(
+          '🔔 Chamado Recebido!',
+          `Chamado #${data.chamadoId} de ${data.transferredBy}`
+        );
       }
     });
 
-    // NOVO: Event listeners para limpeza de estado
+    // Event listeners para limpeza de estado
     const handleAttendanceFinished = () => {
       console.log('🏁 Atendimento finalizado - limpando estado global');
       setCurrentAttendance(null);
@@ -358,40 +329,6 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       setCurrentAttendance(null);
       setIsUserInAttendance(false);
     };
-
-    // DEBUG: Listener específico para debug de transferências
-    newSocket.on('transfer_notification', (data) => {
-      console.log('🔔 EVENTO transfer_notification recebido:', data);
-      console.log('🆔 Meu ID:', authState.user?.id);
-      console.log('🎯 Socket ID atual:', newSocket.id);
-      
-      // Verificar se é para mim
-      if (data.debug) {
-        console.log('🔍 Debug do backend:', data.debug);
-        console.log('🎯 Socket esperado:', data.debug.socketId);
-        console.log('🎯 Socket atual:', newSocket.id);
-        console.log('✅ Match de socket?', data.debug.socketId === newSocket.id);
-      }
-    });
-
-    // DEBUG: Listener para todos os eventos de transferência
-    newSocket.onAny((eventName, ...args) => {
-      if (eventName.includes('transfer') || eventName.includes('notification')) {
-        console.log(`🎯 Evento capturado: ${eventName}`, args);
-        
-        // Log especial para eventos de notificação
-        if (eventName.includes('notification')) {
-          console.log('🔔 EVENTO DE NOTIFICAÇÃO DETECTADO!');
-          console.log('📋 Dados:', args[0]);
-        }
-        
-        // Log especial para transferências
-        if (eventName.includes('transfer')) {
-          console.log('🔄 EVENTO DE TRANSFERÊNCIA DETECTADO!');
-          console.log('📋 Dados:', args[0]);
-        }
-      }
-    });
 
     // Adicionar os novos listeners
     newSocket.on('attendance_finished', handleAttendanceFinished);
@@ -412,11 +349,16 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       newSocket.off('attendance_finished', handleAttendanceFinished);
       newSocket.off('attendance_cancelled', handleAttendanceCancelled);
       newSocket.off('transfer_completed', handleAttendanceTransferred);
-
     };
   }, [authState.isAuthenticated, authState.user, checkForActiveAttendance, showSuccessToast]);
 
-  // Funções memoized
+  // NOVO: Cleanup periódico de transferências antigas
+  useEffect(() => {
+    const cleanupInterval = setInterval(cleanupOldTransfers, 60000); // A cada minuto
+    return () => clearInterval(cleanupInterval);
+  }, [cleanupOldTransfers]);
+
+  // Funções memoized (resto do código permanece igual)
   const startAttendance = useCallback(async (chamadoId: number): Promise<AttendanceInfo | null> => {
     if (!socketRef.current || !authState.user) {
       console.error('❌ Socket não conectado');
@@ -467,7 +409,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
   
     console.log(`🚫 Cancelando atendimento ${chamadoId}...`);
     
-    // NOVO: Limpar estado IMEDIATAMENTE
+    // Limpar estado IMEDIATAMENTE
     setCurrentAttendance(null);
     setIsUserInAttendance(false);
     
@@ -482,7 +424,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
   
     console.log('🏁 Finalizando atendimento...');
     
-    // NOVO: Limpar estado IMEDIATAMENTE  
+    // Limpar estado IMEDIATAMENTE  
     setCurrentAttendance(null);
     setIsUserInAttendance(false);
     

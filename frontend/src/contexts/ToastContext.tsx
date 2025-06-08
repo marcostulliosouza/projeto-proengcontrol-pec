@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import Toast from '../components/ui/Toast';
 
@@ -23,11 +24,18 @@ interface ToastProviderProps {
   children: React.ReactNode;
 }
 
+// Criar um contador para IDs únicos
+let toastCounter = 0;
+const generateUniqueId = () => {
+  toastCounter += 1;
+  return `toast_${Date.now()}_${toastCounter}_${Math.random().toString(36).substr(2, 9)}`;
+};
+
 export const ToastProvider: React.FC<ToastProviderProps> = ({ children }) => {
   const [toasts, setToasts] = useState<ToastData[]>([]);
 
   const showToast = useCallback((toast: Omit<ToastData, 'id'>) => {
-    const id = Date.now().toString();
+    const id = generateUniqueId();
     const newToast = { ...toast, id };
     
     setToasts(prev => [...prev, newToast]);
@@ -63,11 +71,13 @@ export const ToastProvider: React.FC<ToastProviderProps> = ({ children }) => {
 
   return (
     <ToastContext.Provider value={value}>
-      {children}
-      
-      {/* Renderizar toasts */}
-      <div className="fixed top-0 right-0 z-50 p-4 space-y-4 pointer-events-none">
-        {toasts.map((toast) => (
+    {children}
+    
+    {/* FIXED: Renderizar toasts com keys únicas garantidas */}
+    <div className="fixed top-0 right-0 z-50 p-4 space-y-4 pointer-events-none">
+      {toasts.map((toast) => {
+        console.log('🔑 Renderizando toast com key:', toast.id);   
+        return (
           <div key={toast.id} className="pointer-events-auto">
             <Toast
               type={toast.type}
@@ -77,16 +87,17 @@ export const ToastProvider: React.FC<ToastProviderProps> = ({ children }) => {
               onClose={() => removeToast(toast.id)}
             />
           </div>
-        ))}
-      </div>
-    </ToastContext.Provider>
-  );
+        );
+      })}
+    </div>
+  </ToastContext.Provider>
+);
 };
 
 export const useToast = () => {
-  const context = useContext(ToastContext);
-  if (!context) {
-    throw new Error('useToast deve ser usado dentro de ToastProvider');
-  }
-  return context;
+const context = useContext(ToastContext);
+if (!context) {
+  throw new Error('useToast deve ser usado dentro de ToastProvider');
+}
+return context;
 };

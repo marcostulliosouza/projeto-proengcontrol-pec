@@ -235,7 +235,7 @@ io.on('connection', (socket) => {
         return;
       }
       
-      // Buscar dados do atendimento e chamado
+      // Buscar dados do chamado e atendimento
       console.log('🔍 Buscando dados do chamado e atendimento...');
       const [atendimentoAtual, chamadoCompleto] = await Promise.all([
         AtendimentoAtivoModel.buscarPorChamado(chamadoId),
@@ -277,22 +277,45 @@ io.on('connection', (socket) => {
       console.log('🎯 Socket de destino:', novoUserEntry.socketId);
       
       // ESTRATÉGIA 1: Emitir para socket específico
-      console.log(`📡 TENTATIVA 1: Emitindo transfer_notification para socket ${novoUserEntry.socketId}`);
+      console.log(`📡 ESTRATÉGIA 1: Emitindo transfer_notification para socket ${novoUserEntry.socketId}`);
       io.to(novoUserEntry.socketId).emit('transfer_notification', notificationData);
       
       // ESTRATÉGIA 2: Broadcast para todos com filtro
-      console.log(`📡 TENTATIVA 2: Broadcast transfer_notification_broadcast para todos`);
+      console.log(`📡 ESTRATÉGIA 2: Broadcast transfer_notification_broadcast para todos`);
       io.emit('transfer_notification_broadcast', {
         targetUserId: novoColaboradorId,
         ...notificationData
       });
       
       // ESTRATÉGIA 3: Emitir para TODOS (para debug)
-      console.log(`📡 TENTATIVA 3: Emitindo transfer_notification para TODOS (debug)`);
+      console.log(`📡 ESTRATÉGIA 3: Emitindo transfer_notification_debug para TODOS`);
       io.emit('transfer_notification_debug', {
         forUserId: novoColaboradorId,
         forUserName: novoUserEntry.nome,
         ...notificationData
+      });
+  
+      // ESTRATÉGIA 4: NOVA - Emitir transfer_received diretamente
+      console.log(`📡 ESTRATÉGIA 4: Emitindo transfer_received para socket ${novoUserEntry.socketId}`);
+      io.to(novoUserEntry.socketId).emit('transfer_received', {
+        chamadoId,
+        userId: novoColaboradorId,
+        userName: novoUserEntry.nome,
+        transferredBy: antigoUser?.nome || 'Usuário',
+        timestamp,
+        autoOpen: true
+      });
+  
+      // ESTRATÉGIA 5: NOVA - Broadcast transfer_received para todos (com filtro no frontend)
+      console.log(`📡 ESTRATÉGIA 5: Broadcast transfer_received para TODOS`);
+      io.emit('transfer_received_broadcast', {
+        targetUserId: novoColaboradorId,
+        chamadoId,
+        userId: novoColaboradorId,
+        userName: novoUserEntry.nome,
+        transferredBy: antigoUser?.nome || 'Usuário',
+        timestamp,
+        autoOpen: true
       });
   
       // 1. Notificar quem transferiu
@@ -326,7 +349,17 @@ io.on('connection', (socket) => {
       });
   
       console.log(`✅ TODAS as notificações enviadas para transferência ${chamadoId}`);
-      console.log(`📊 Resumo: socket específico + broadcast + debug enviados`);
+      console.log(`📊 Resumo: 5 estratégias de notificação + eventos de atendimento enviados`);
+      
+      // NOVO: Log detalhado de todos os eventos emitidos
+      console.log(`📋 EVENTOS EMITIDOS:`);
+      console.log(`   1. transfer_notification → socket ${novoUserEntry.socketId}`);
+      console.log(`   2. transfer_notification_broadcast → todos`);
+      console.log(`   3. transfer_notification_debug → todos`);
+      console.log(`   4. transfer_received → socket ${novoUserEntry.socketId}`);
+      console.log(`   5. transfer_received_broadcast → todos`);
+      console.log(`   6. transfer_completed → quem transferiu`);
+      console.log(`   7. user_started_attendance → broadcast geral`);
       
     } catch (error) {
       console.error('❌ Erro ao processar transferência via socket:', error);
