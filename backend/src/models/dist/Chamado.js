@@ -250,30 +250,34 @@ var ChamadoModel = /** @class */ (function () {
     // Criar novo chamado
     ChamadoModel.create = function (chamado, operador) {
         return __awaiter(this, void 0, Promise, function () {
-            var query, params, result, error_6;
+            var cha_plano, query, params, result, error_6;
             return __generator(this, function (_a) {
                 switch (_a.label) {
                     case 0:
-                        _a.trys.push([0, 2, , 3]);
-                        query = "\n        INSERT INTO chamados (\n          cha_tipo, cha_cliente, cha_produto, cha_DT, cha_descricao, cha_local,\n          cha_status, cha_data_hora_abertura, cha_operador, cha_visualizado, cha_plano\n        ) VALUES (?, ?, ?, ?, ?, ?, 1, NOW(), ?, 0, 0)\n      ";
+                        cha_plano = chamado.cha_tipo === 5 ? -1 : 0;
+                        _a.label = 1;
+                    case 1:
+                        _a.trys.push([1, 3, , 4]);
+                        query = "\n        INSERT INTO chamados (\n          cha_tipo, cha_cliente, cha_produto, cha_DT, cha_descricao, cha_local,\n          cha_status, cha_data_hora_abertura, cha_operador, cha_visualizado, cha_plano\n        ) VALUES (?, ?, ?, ?, ?, ?, 1, NOW(), ?, 0, ?)\n      ";
                         params = [
                             chamado.cha_tipo,
                             chamado.cha_cliente,
                             chamado.cha_produto,
                             chamado.cha_DT || '',
                             chamado.cha_descricao,
-                            chamado.local_chamado,
-                            operador
+                            chamado.local_chamado || null,
+                            operador,
+                            cha_plano
                         ];
                         return [4 /*yield*/, database_1.executeQuery(query, params)];
-                    case 1:
+                    case 2:
                         result = _a.sent();
                         return [2 /*return*/, result.insertId];
-                    case 2:
+                    case 3:
                         error_6 = _a.sent();
                         console.error('Erro ao criar chamado:', error_6);
                         throw error_6;
-                    case 3: return [2 /*return*/];
+                    case 4: return [2 /*return*/];
                 }
             });
         });

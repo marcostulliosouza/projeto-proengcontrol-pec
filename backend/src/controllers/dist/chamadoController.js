@@ -126,7 +126,7 @@ exports.createChamado = errorHandler_1.asyncHandler(function (req, res) { return
                 _a = req.body, cha_tipo = _a.cha_tipo, cha_cliente = _a.cha_cliente, cha_produto = _a.cha_produto, cha_DT = _a.cha_DT, cha_descricao = _a.cha_descricao, local_chamado = _a.local_chamado;
                 operador = ((_b = req.user) === null || _b === void 0 ? void 0 : _b.nome) || 'Sistema';
                 // Validações básicas
-                if (!cha_tipo || !cha_cliente || !cha_descricao || !cha_DT || !local_chamado) {
+                if (!cha_tipo || !cha_cliente || !cha_descricao) {
                     res.status(400).json({
                         success: false,
                         message: 'Tipo, cliente, DT, local e descrição são obrigatórios',
@@ -140,7 +140,7 @@ exports.createChamado = errorHandler_1.asyncHandler(function (req, res) { return
                     cha_produto: cha_produto || null,
                     cha_DT: cha_DT || '',
                     cha_descricao: cha_descricao.trim(),
-                    local_chamado: local_chamado
+                    local_chamado: local_chamado || null
                 };
                 _g.label = 1;
             case 1:

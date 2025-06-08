@@ -79,7 +79,7 @@ export const createChamado = asyncHandler(async (req: AuthRequest, res: Response
   const operador = req.user?.nome || 'Sistema';
 
   // Validações básicas
-  if (!cha_tipo || !cha_cliente || !cha_descricao ! || !cha_DT || !local_chamado) {
+  if (!cha_tipo || !cha_cliente || !cha_descricao) {
     res.status(400).json({
       success: false,
       message: 'Tipo, cliente, DT, local e descrição são obrigatórios',
@@ -94,7 +94,7 @@ export const createChamado = asyncHandler(async (req: AuthRequest, res: Response
     cha_produto: cha_produto || null,
     cha_DT: cha_DT || '',
     cha_descricao: cha_descricao.trim(),
-    local_chamado,
+    local_chamado: local_chamado || null,
   };
 
   try {

@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Button, CustomSelect, Input, Select } from '../ui';
 import { ChamadoService, type TipoChamado, type Cliente, type Produto, type LocalChamado } from '../../services/chamadoService';
 import type { Chamado } from '../../types';
+import { usePermissions } from '../../types/permissions';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface ChamadoFormProps {
   chamado?: Chamado | null;
@@ -28,6 +30,11 @@ const ChamadoForm: React.FC<ChamadoFormProps> = ({
     cha_descricao: chamado?.cha_descricao || '',
     local_chamado: chamado?.local_chamado || '',
   });
+
+  // Hooks de autenticação e permissões
+  const { state: authState } = useAuth();
+  const permissions = usePermissions(authState.user?.categoria);
+
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -129,6 +136,14 @@ const ChamadoForm: React.FC<ChamadoFormProps> = ({
     }
   };
 
+  const getFiltroTiposChamados = () => {
+    if (permissions.isProduction()) {
+      return tipos.filter(tipo => tipo.tch_id !== 5);
+    }
+
+    return tipos.filter(tipo => tipo.tch_id === 5) ;
+  }
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -137,7 +152,7 @@ const ChamadoForm: React.FC<ChamadoFormProps> = ({
           required
           value={formData.cha_tipo}
           onChange={(value) => handleChange('cha_tipo', value)}
-          options={tipos.map(tipo => ({
+          options={getFiltroTiposChamados().map(tipo => ({
             value: tipo.tch_id,
             label: tipo.tch_descricao
           }))}
@@ -189,6 +204,7 @@ const ChamadoForm: React.FC<ChamadoFormProps> = ({
             label: local.loc_nome
           }))}
           placeholder="Selecione o local do chamado"
+          disabled={!permissions.isProduction()}
         />
       </div>
 
