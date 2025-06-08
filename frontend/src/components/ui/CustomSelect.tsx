@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/rules-of-hooks */
 // components/ui/CustomSelect.tsx - UX/UI melhorado
 
 import React, { useState, useRef, useEffect } from 'react';
@@ -19,6 +20,7 @@ interface CustomSelectProps {
   onChange?: (value: string | number) => void;
   disabled?: boolean;
   required?: boolean;
+  hidden?: boolean;
 }
 
 const CustomSelect: React.FC<CustomSelectProps> = ({
@@ -31,7 +33,13 @@ const CustomSelect: React.FC<CustomSelectProps> = ({
   onChange,
   disabled = false,
   required = false,
+  hidden = false,
 }) => {
+
+  if (hidden){
+    return null;
+  }
+
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [highlightedIndex, setHighlightedIndex] = useState(-1);

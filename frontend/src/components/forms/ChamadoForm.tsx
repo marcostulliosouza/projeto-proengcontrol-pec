@@ -205,6 +205,7 @@ const ChamadoForm: React.FC<ChamadoFormProps> = ({
           }))}
           placeholder="Selecione o local do chamado"
           disabled={!permissions.isProduction()}
+          hidden={!permissions.isProduction()}
         />
       </div>
 
