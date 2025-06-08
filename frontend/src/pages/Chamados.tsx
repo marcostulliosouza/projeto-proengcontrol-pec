@@ -5,12 +5,20 @@ import { ChamadoService, type TipoChamado, type StatusChamado, type Cliente } fr
 import { useSocket } from '../contexts/SocketContext';
 import { useChamadosRealTime } from '../hooks/useChamadosRealTime';
 import { useGlobalAttendance } from '../hooks/useGlobalAttendance';
+import { usePermissions } from '../types/permissions';
+import { useAuth } from '../contexts/AuthContext';
 import type { Chamado, FilterState, PaginationInfo } from '../types';
 import ChamadoForm from '../components/forms/ChamadoForm';
 import ChamadoAtendimento from '../components/chamados/ChamadoAtendimento';
 import TransferButton from '../components/chamados/TransferButton';
 
 const Chamados: React.FC = () => {
+
+  // Hooks de autenticação e permissões
+  const { state: authState } = useAuth();
+  const permissions = usePermissions(authState.user?.categoria);
+
+
   const [initialChamados, setInitialChamados] = useState<Chamado[]>([]);
   const [loading, setLoading] = useState(true);
   const [pagination, setPagination] = useState<PaginationInfo>({
@@ -70,6 +78,17 @@ const Chamados: React.FC = () => {
   } = useChamadosRealTime(initialChamados);
 
   const { isInAttendance, attendanceChamado } = useGlobalAttendance();
+
+  // Log das permissões para debug
+  useEffect(() => {
+    console.log('🔐 Permissões do usuário:', {
+      nivel: permissions.getUserLevelName(),
+      podeAtender: permissions.hasPermission('START_ATTENDANCE'),
+      podeCriar: permissions.hasPermission('CREATE_CHAMADO'),
+      podeTransferir: permissions.hasPermission('TRANSFER_CHAMADO'),
+      isProducao: permissions.isProduction()
+    });
+  }, [permissions]);
 
   // FUNÇÃO loadChamados definida primeiro
   const loadChamados = useCallback(async (page = 1, showLoading = true) => {
@@ -361,9 +380,14 @@ const Chamados: React.FC = () => {
   }, [loadChamados]);
 
   const handleNewChamado = useCallback(() => {
+    if (!permissions.hasPermission('CREATE_CHAMADO')) {
+      alert('Você não tem permissão para criar chamados.');
+    }
+    
     setEditingChamado(null);
     setModalOpen(true);
-  }, []);
+
+  }, [permissions]);
   
 
   const handleViewChamado = useCallback(async (chamado: Chamado) => {
@@ -380,6 +404,13 @@ const Chamados: React.FC = () => {
 
   // Função melhorada com debounce e feedback imediato
   const handleIniciarAtendimento = useCallback(async (chamado: Chamado) => {
+
+    // Verifica a permissao
+    if (!permissions.hasPermission('START_ATTENDANCE')) {
+      alert('Você não tem permissão para iniciar atendimentos.');
+      return;
+    }
+
     // Verificar se já está processando este chamado
     if (actionLoading.has(chamado.cha_id)) {
       console.log('🔄 Já processando este chamado...');
@@ -424,7 +455,7 @@ const Chamados: React.FC = () => {
         return newSet;
       });
     }, 5000);
-  }, [actionLoading, isUserInAttendance, currentAttendance, getTimer, startAttendance]);
+  }, [actionLoading, isUserInAttendance, currentAttendance, getTimer, startAttendance, permissions]);
 
   const handleCloseModal = useCallback(() => {
     console.log('🔄 Fechando modais MANUALMENTE...');
@@ -524,8 +555,12 @@ const Chamados: React.FC = () => {
     if (actionLoading.has(chamado.cha_id)) return false;
     if (getTimer(chamado.cha_id)) return false;
     if (isUserInAttendance) return false;
+
+    // Verificacao de permissao
+    if(!permissions.hasPermission('START_ATTENDANCE')) return false;
+
     return true;
-  }, [actionLoading, getTimer, isUserInAttendance]);
+  }, [actionLoading, getTimer, isUserInAttendance, permissions]);
 
   const columns = [
     {
@@ -576,7 +611,8 @@ const Chamados: React.FC = () => {
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                     </svg>
-                    {isBeingAttended ? 'Ocupado' : 'Bloqueado'}
+                    {isBeingAttended ? 'Ocupado' : 
+                     !permissions.hasPermission('START_ATTENDANCE') ? 'Sem Permissão' : 'Bloqueado'}
                   </div>
                 )}
               </>
@@ -591,15 +627,17 @@ const Chamados: React.FC = () => {
                       <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
                       Você
                     </div>
-                    {/* Botão de Transferir */}
-                    <TransferButton
-                      chamado={item}
-                      onTransfer={() => {
-                        handleChamadoUpdated(item);
-                        loadChamados(pagination.currentPage, false);
-                      }}
-                      disabled={isLoading}
-                    />
+                    {/* Botão de Transferir - COM VERIFICAÇÃO DE PERMISSÃO */}
+                    {permissions.hasPermission('TRANSFER_CHAMADO') && (
+                      <TransferButton
+                        chamado={item}
+                        onTransfer={() => {
+                          // handleChamadoUpdated(item);
+                          loadChamados(pagination.currentPage, false);
+                        }}
+                        disabled={isLoading}
+                      />
+                    )}
                   </div>
                 ) : (
                   <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-lg">

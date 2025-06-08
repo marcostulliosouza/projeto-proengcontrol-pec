@@ -1,6 +1,7 @@
 import React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { usePermissions } from '../../types/permissions';
 
 // Ícones com tamanho padrão correto
 const DashboardIcon = ({ className = "w-5 h-5" }) => (
@@ -46,7 +47,7 @@ interface MenuItem {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   path: string;
-  requiredCategory?: number[];
+  permission: string;
   getBadge?: (stats: GlobalStats) => number; 
 }
 
@@ -62,12 +63,14 @@ const createMenuItems = (): MenuItem[] => [
     label: 'Dashboard',
     icon: DashboardIcon,
     path: '/dashboard',
+    permission: 'VIEW_DASHBOARD'
   },
   {
     id: 'dispositivos',
     label: 'Dispositivos',
     icon: DevicesIcon,
     path: '/dispositivos',
+    permission: 'VIEW_DISPOSITIVOS',
     getBadge: (stats) => stats.dispositivosInativos, // Badge para dispositivos inativos
   },
   {
@@ -75,6 +78,7 @@ const createMenuItems = (): MenuItem[] => [
     label: 'Suporte à Linha',
     icon: CallsIcon,
     path: '/chamados',
+    permission: 'VIEW_CHAMADOS',
     getBadge: (stats) => stats.chamadosAbertos, // Badge para chamados abertos
   },
   {
@@ -82,6 +86,7 @@ const createMenuItems = (): MenuItem[] => [
     label: 'Manutenção',
     icon: MaintenanceIcon,
     path: '/manutencao',
+    permission: 'VIEW_MANUTENCAO',
     getBadge: (stats) => stats.manutencoesPendentes, // Badge para manutenções
   },
   {
@@ -89,14 +94,14 @@ const createMenuItems = (): MenuItem[] => [
     label: 'Produção',
     icon: ProductionIcon,
     path: '/producao',
-    requiredCategory: [3, 4, 5],
+    permission: 'VIEW_PRODUCAO',
   },
   {
     id: 'relatorios',
     label: 'Relatórios',
     icon: ReportsIcon,
     path: '/relatorios',
-    requiredCategory: [3, 4, 5],
+    permission: 'VIEW_RELATORIOS',
   },
 ];
 
@@ -115,15 +120,20 @@ const Sidebar: React.FC<SidebarProps> = ({
   onToggleCollapse,
   stats 
 }) => {
-  const { hasPermission } = useAuth();
+  const { state: authState } = useAuth();
+  const { hasPermission, getUserLevelName, isProduction } = usePermissions(authState.user?.categoria);
   const location = useLocation();
 
   const menuItems = createMenuItems();
 
+  // NOVO: Filtrar items baseado em permissões
   const filteredMenuItems = menuItems.filter(item => {
-    if (!item.requiredCategory) return true;
-    return hasPermission(item.requiredCategory);
+    return hasPermission(item.permission);
   });
+
+  // Log para debug
+  console.log('🔐 Usuário:', authState.user?.nome, '- Nível:', getUserLevelName());
+  console.log('📋 Menu items disponíveis:', filteredMenuItems.map(item => item.label));
 
   return (
     <>
@@ -157,16 +167,16 @@ const Sidebar: React.FC<SidebarProps> = ({
                 </span>
               </div>
               
-              {/* Texto do header - sempre mostrar quando expandido */}
               {!isCollapsed && (
                 <div className="text-white">
                   <h1 className="text-base font-bold leading-tight">ProEngControl</h1>
-                  <p className="text-xs text-primary-100">v1.0</p>
+                  <p className="text-xs text-primary-100">
+                    {getUserLevelName()} {/* NOVO: Mostrar nível do usuário */}
+                  </p>
                 </div>
               )}
             </div>
             
-            {/* Botão fechar para mobile */}
             {!isCollapsed && (
               <button 
                 onClick={onClose}
@@ -180,15 +190,26 @@ const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
 
-        
-
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto py-2 px-2">
+          {/* NOVO: Aviso especial para usuários de produção */}
+          {isProduction() && !isCollapsed && (
+            <div className="mx-2 mb-3 p-2 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <div className="flex items-center space-x-2">
+                <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
+                <span className="text-xs font-medium text-yellow-800">Usuário Produção</span>
+              </div>
+              <p className="text-xs text-yellow-700 mt-1">
+                Acesso limitado: apenas visualização
+              </p>
+            </div>
+          )}
+
           <ul className="space-y-1">
             {filteredMenuItems.map((item) => {
               const Icon = item.icon;
               const isActive = location.pathname === item.path;
-              const badge = item.getBadge ? item.getBadge(stats) : 0; // Calcular badge
+              const badge = item.getBadge ? item.getBadge(stats) : 0;
               
               return (
                 <li key={item.id} className="relative group">
@@ -242,7 +263,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                     )}
                   </NavLink>
                   
-                  {/* Tooltip para modo colapsado - ATUALIZADO com badge */}
+                  {/* Tooltip para modo colapsado */}
                   {isCollapsed && (
                     <div className="hidden lg:group-hover:block absolute left-14 top-1/2 transform -translate-y-1/2 z-50">
                       <div className="bg-gray-900 text-white text-sm rounded-lg py-2 px-3 whitespace-nowrap shadow-xl">
@@ -260,6 +281,16 @@ const Sidebar: React.FC<SidebarProps> = ({
               );
             })}
           </ul>
+
+          {/* NOVO: Mensagem se não há items disponíveis */}
+          {filteredMenuItems.length === 0 && (
+            <div className="text-center py-8 text-secondary-500">
+              <svg className="w-8 h-8 mx-auto mb-2 text-secondary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+              <p className="text-sm">Sem acesso a páginas</p>
+            </div>
+          )}
         </nav>
 
         {/* Footer com toggle */}
@@ -285,7 +316,6 @@ const Sidebar: React.FC<SidebarProps> = ({
               )}
             </div>
             
-            {/* Texto do botão - sempre mostrar quando expandido */}
             {!isCollapsed && (
               <span className="text-sm font-medium text-secondary-700">
                 Recolher

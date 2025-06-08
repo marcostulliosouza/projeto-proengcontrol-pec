@@ -387,9 +387,9 @@ export class ChamadoModel {
     try {
       const query = `
         INSERT INTO chamados (
-          cha_tipo, cha_cliente, cha_produto, cha_DT, cha_descricao,
+          cha_tipo, cha_cliente, cha_produto, cha_DT, cha_descricao, cha_local,
           cha_status, cha_data_hora_abertura, cha_operador, cha_visualizado, cha_plano
-        ) VALUES (?, ?, ?, ?, ?, 1, NOW(), ?, 0, 0)
+        ) VALUES (?, ?, ?, ?, ?, ?, 1, NOW(), ?, 0, 0)
       `;
 
       const params = [
@@ -398,6 +398,7 @@ export class ChamadoModel {
         chamado.cha_produto,
         chamado.cha_DT || '',
         chamado.cha_descricao,
+        chamado.local_chamado,
         operador
       ];
 
