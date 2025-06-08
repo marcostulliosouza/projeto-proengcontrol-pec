@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useAuth } from './AuthContext';
@@ -357,6 +358,40 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       setCurrentAttendance(null);
       setIsUserInAttendance(false);
     };
+
+    // DEBUG: Listener específico para debug de transferências
+    newSocket.on('transfer_notification', (data) => {
+      console.log('🔔 EVENTO transfer_notification recebido:', data);
+      console.log('🆔 Meu ID:', authState.user?.id);
+      console.log('🎯 Socket ID atual:', newSocket.id);
+      
+      // Verificar se é para mim
+      if (data.debug) {
+        console.log('🔍 Debug do backend:', data.debug);
+        console.log('🎯 Socket esperado:', data.debug.socketId);
+        console.log('🎯 Socket atual:', newSocket.id);
+        console.log('✅ Match de socket?', data.debug.socketId === newSocket.id);
+      }
+    });
+
+    // DEBUG: Listener para todos os eventos de transferência
+    newSocket.onAny((eventName, ...args) => {
+      if (eventName.includes('transfer') || eventName.includes('notification')) {
+        console.log(`🎯 Evento capturado: ${eventName}`, args);
+        
+        // Log especial para eventos de notificação
+        if (eventName.includes('notification')) {
+          console.log('🔔 EVENTO DE NOTIFICAÇÃO DETECTADO!');
+          console.log('📋 Dados:', args[0]);
+        }
+        
+        // Log especial para transferências
+        if (eventName.includes('transfer')) {
+          console.log('🔄 EVENTO DE TRANSFERÊNCIA DETECTADO!');
+          console.log('📋 Dados:', args[0]);
+        }
+      }
+    });
 
     // Adicionar os novos listeners
     newSocket.on('attendance_finished', handleAttendanceFinished);

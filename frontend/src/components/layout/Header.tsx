@@ -4,6 +4,7 @@ import { useGlobalAttendance } from '../../hooks/useGlobalAttendance';
 import { useNavigate } from 'react-router-dom';
 import Button from '../ui/Button';
 import NotificationPanel from '../ui/NotificationPanel'; 
+import { useNotifications } from '../../hooks/useNotifications';
 
 interface HeaderProps {
   onMenuClick: () => void;
@@ -24,6 +25,21 @@ const Header: React.FC<HeaderProps> = ({
     if (window.confirm('Tem certeza que deseja sair?')) {
       await logout();
     }
+  };
+
+  const { addNotification } = useNotifications();
+
+  // Função de teste (TEMPORÁRIA)
+  const testNotification = () => {
+    addNotification({
+      type: 'new_chamado',
+      title: '🧪 Teste de Notificação',
+      message: 'Esta é uma notificação de teste para verificar se o sistema está funcionando',
+      chamadoId: 999,
+      createdBy: 'Sistema',
+      timestamp: new Date().toISOString(),
+      actionUrl: '/chamados'
+    });
   };
 
   return (
@@ -89,6 +105,14 @@ const Header: React.FC<HeaderProps> = ({
 
           {/* NOVO: Painel de Notificações */}
           <NotificationPanel />
+
+          <button
+            onClick={testNotification}
+            className="px-3 py-1 bg-blue-500 text-white rounded text-xs"
+            title="Testar notificação"
+          >
+            🧪 Teste
+          </button>
 
           {/* User menu - compacto */}
           <div className="flex items-center space-x-2 bg-secondary-50 rounded-lg px-2 py-1.5">

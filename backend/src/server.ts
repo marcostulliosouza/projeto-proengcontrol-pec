@@ -225,69 +225,108 @@ io.on('connection', (socket) => {
       const antigoUser = activeUsers.get(socket.id);
       const novoUserEntry = Array.from(activeUsers.values()).find(user => user.id === novoColaboradorId);
       
+      console.log('👤 Antigo usuário:', antigoUser?.nome || 'Não encontrado');
+      console.log('👤 Novo usuário:', novoUserEntry?.nome || 'Não encontrado');
+      
       if (!novoUserEntry) {
+        console.log(`❌ Usuário ${novoColaboradorId} não encontrado nos activeUsers`);
+        console.log('👥 Usuários ativos:', Array.from(activeUsers.values()).map(u => ({id: u.id, nome: u.nome, socketId: u.socketId})));
         socket.emit('transfer_error', { message: 'Usuário destino não está online', chamadoId });
         return;
       }
       
-      // Buscar dados do atendimento atual para preservar tempo
-      const atendimentoAtual = await AtendimentoAtivoModel.buscarPorChamado(chamadoId);
+      // Buscar dados do atendimento e chamado
+      console.log('🔍 Buscando dados do chamado e atendimento...');
+      const [atendimentoAtual, chamadoCompleto] = await Promise.all([
+        AtendimentoAtivoModel.buscarPorChamado(chamadoId),
+        ChamadoModel.findById(chamadoId)
+      ]);
+      
+      console.log('📋 Atendimento encontrado:', !!atendimentoAtual);
+      console.log('📋 Chamado encontrado:', !!chamadoCompleto, chamadoCompleto?.cliente_nome);
+      
       if (!atendimentoAtual) {
         socket.emit('transfer_error', { message: 'Atendimento não encontrado', chamadoId });
         return;
       }
-
-      // NOVO: Buscar dados completos do chamado para notificação
-      const chamadoCompleto = await ChamadoModel.findById(chamadoId);
       
-      // IMPORTANTE: Preservar o tempo original de início
+      if (!chamadoCompleto) {
+        socket.emit('transfer_error', { message: 'Chamado não encontrado', chamadoId });
+        return;
+      }
+      
+      // Fazer transferência
+      console.log('⚡ Executando transferência no banco...');
       const startTimeOriginal = atendimentoAtual.atc_data_hora_inicio;
-      const tempoJaDecorrido = Math.floor((new Date().getTime() - new Date(startTimeOriginal).getTime()) / 1000);
-      
-      // Fazer transferência no banco (só muda colaborador, mantém tempo)
       const result = await AtendimentoAtivoModel.transferir(chamadoId, antigoColaboradorId, novoColaboradorId);
-      
       const timestamp = new Date().toISOString();
       
+      console.log('✅ Transferência realizada no banco - enviando notificações...');
+      
+      // PREPARAR dados da notificação
+      const notificationData = {
+        chamadoId: chamadoId,
+        clienteNome: chamadoCompleto.cliente_nome || 'Cliente não identificado',
+        transferredBy: antigoUser?.nome || 'Usuário desconhecido',
+        transferredById: antigoColaboradorId,
+        timestamp: timestamp,
+        type: 'transfer_received'
+      };
+      
+      console.log('📢 Dados da notificação preparados:', notificationData);
+      console.log('🎯 Socket de destino:', novoUserEntry.socketId);
+      
+      // ESTRATÉGIA 1: Emitir para socket específico
+      console.log(`📡 TENTATIVA 1: Emitindo transfer_notification para socket ${novoUserEntry.socketId}`);
+      io.to(novoUserEntry.socketId).emit('transfer_notification', notificationData);
+      
+      // ESTRATÉGIA 2: Broadcast para todos com filtro
+      console.log(`📡 TENTATIVA 2: Broadcast transfer_notification_broadcast para todos`);
+      io.emit('transfer_notification_broadcast', {
+        targetUserId: novoColaboradorId,
+        ...notificationData
+      });
+      
+      // ESTRATÉGIA 3: Emitir para TODOS (para debug)
+      console.log(`📡 TENTATIVA 3: Emitindo transfer_notification para TODOS (debug)`);
+      io.emit('transfer_notification_debug', {
+        forUserId: novoColaboradorId,
+        forUserName: novoUserEntry.nome,
+        ...notificationData
+      });
+  
       // 1. Notificar quem transferiu
       socket.emit('transfer_completed', {
         chamadoId,
         userId: antigoColaboradorId,
-        message: 'Chamado transferido com sucesso',
+        message: `Chamado transferido para ${novoUserEntry.nome}`,
         timestamp
       });
   
-      // 2. Notificar quem recebeu COM TEMPO ORIGINAL PRESERVADO
+      // 2. Eventos de atendimento (que já funcionam)
+      console.log('📱 Enviando eventos de atendimento...');
       io.to(novoUserEntry.socketId).emit('transfer_received', {
         chamadoId,
         userId: novoColaboradorId,
         userName: novoUserEntry.nome,
-        startTime: startTimeOriginal, // TEMPO ORIGINAL PRESERVADO
+        startTime: startTimeOriginal,
         tempoJaDecorrido: result.tempoPreservado,
         transferredBy: antigoUser?.nome || 'Usuário',
         timestamp,
         autoOpen: true
       });
-
-      io.to(novoUserEntry.socketId).emit('transfer_notification', {
-        chamadoId,
-        clienteNome: atendimentoAtual.cliente_nome || 'Cliente não identificado',
-        transferredBy: antigoUser?.nome || 'Usuário',
-        transferredById: antigoColaboradorId,
-        timestamp,
-        type: 'transfer_received'
-      });
   
-      // 3. Broadcast para todos os outros usuários
+      // 3. Broadcast geral
       socket.broadcast.emit('user_started_attendance', {
         chamadoId,
         userId: novoColaboradorId,
         userName: novoUserEntry.nome,
-        startTime: startTimeOriginal, // TEMPO ORIGINAL PRESERVADO
+        startTime: startTimeOriginal,
         motivo: 'transferred_general'
       });
   
-      console.log(`✅ Socket: Transferência processada - tempo preservado: ${result.tempoPreservado}s desde ${startTimeOriginal}`);
+      console.log(`✅ TODAS as notificações enviadas para transferência ${chamadoId}`);
+      console.log(`📊 Resumo: socket específico + broadcast + debug enviados`);
       
     } catch (error) {
       console.error('❌ Erro ao processar transferência via socket:', error);
