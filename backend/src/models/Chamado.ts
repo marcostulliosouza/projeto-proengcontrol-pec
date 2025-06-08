@@ -140,8 +140,6 @@ export class ChamadoModel {
         FROM chamados c
         ${whereClause}
       `;
-
-      // Query principal - SIMPLIFICADA
       // const dataQuery = `
       //   SELECT 
       //     c.cha_id,
@@ -511,6 +509,23 @@ export class ChamadoModel {
       return Array.isArray(results) ? results : [];
     } catch (error) {
       console.error('Erro ao buscar ações:', error);
+      throw error;
+    }
+  }
+
+  // Buscar locais de chamado
+  static async getLocais() {
+    try {
+      const query = `
+        SELECT loc_id, loc_nome
+        FROM local_chamado 
+        ORDER BY loc_nome
+      `;
+
+      const result = await executeQuery(query, []);
+      return Array.isArray(result) ? result : [];
+    } catch (error) {
+      console.error('Erro ao buscar locais de chamado:', error);
       throw error;
     }
   }

@@ -15,6 +15,7 @@ import {
   getAcoesByDetrator,
   getRelatorioDetratores,
   getUsuariosOnline,
+  getLocais,
   transferirChamado
 } from '../controllers/chamadoController';
 import { AtendimentoAtivoModel } from '../models/AtendimentoAtivo';
@@ -184,6 +185,7 @@ router.get('/limpar-dados-inconsistentes', async (req, res) => {
 router.get('/detratores/:tipoId', getDetratoresByTipo);
 router.get('/acoes/detrator/:detratorId', getAcoesByDetrator);
 router.get('/relatorio/detratores', getRelatorioDetratores);
+
 // router.get('/:id/historico', getHistoricoAtendimentos);
 
 // ⚠️ AUTENTICAÇÃO OBRIGATÓRIA A PARTIR DAQUI
@@ -194,6 +196,7 @@ router.get('/', getChamados);
 router.get('/tipos', getTipos);
 router.get('/status', getStatusChamado);
 router.get('/acoes', getAcoes);
+router.get('/locais', getLocais)
 router.get('/produtos/:clienteId', getProdutosByCliente);
 router.get('/usuarios-online', getUsuariosOnline);
 router.get('/:id', getChamado);

@@ -40,6 +40,11 @@ export interface Detrator {
   dtr_ativo: number;
 }
 
+export interface LocalChamado {
+  loc_id: number;
+  loc_nome: string;
+}
+
 // export interface FinalizarChamadoData {
 //   detrator_id: number
 //   descricao_atendimento: string;
@@ -165,5 +170,9 @@ export class ChamadoService {
       novoColaboradorId,
       novoColaboradorNome
     });
+  }
+
+  static async getLocaisChamado(): Promise<LocalChamado[]> {
+    return await ApiService.get<LocalChamado[]>('/chamados/locais');
   }
 }

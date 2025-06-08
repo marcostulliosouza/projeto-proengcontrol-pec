@@ -308,6 +308,17 @@ export const getAcoes = asyncHandler(async (req: Request, res: Response) => {
   } as ApiResponse);
 });
 
+export const getLocais = asyncHandler(async (req: Request, res: Response) => {
+  const locais = await ChamadoModel.getLocais();
+  
+  res.json({
+    success: true,
+    message: 'Locais obtidas com sucesso',
+    data: locais,
+    timestamp: new Date().toISOString()
+  } as ApiResponse);
+});
+
 // Buscar detratores por tipo de chamado (seguindo a lógica do Python)
 export const getDetratoresByTipo = asyncHandler(async (req: Request, res: Response) => {
   const tipoId = parseInt(req.params.tipoId);

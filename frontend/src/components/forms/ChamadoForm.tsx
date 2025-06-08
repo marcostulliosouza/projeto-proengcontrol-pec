@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Button, CustomSelect, Input, Select } from '../ui';
-import { ChamadoService, type TipoChamado, type Cliente, type Produto } from '../../services/chamadoService';
+import { ChamadoService, type TipoChamado, type Cliente, type Produto, type LocalChamado } from '../../services/chamadoService';
 import type { Chamado } from '../../types';
 
 interface ChamadoFormProps {
@@ -18,6 +18,7 @@ const ChamadoForm: React.FC<ChamadoFormProps> = ({
   const [tipos, setTipos] = useState<TipoChamado[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [produtos, setProdutos] = useState<Produto[]>([]);
+  const [locais, setLocais] = useState<LocalChamado[]>([]);
 
   const [formData, setFormData] = useState({
     cha_tipo: chamado?.cha_tipo || '',
@@ -25,6 +26,7 @@ const ChamadoForm: React.FC<ChamadoFormProps> = ({
     cha_produto: chamado?.cha_produto || '',
     cha_DT: chamado?.cha_DT || '',
     cha_descricao: chamado?.cha_descricao || '',
+    local_chamado: chamado?.local_chamado || '',
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -33,12 +35,14 @@ const ChamadoForm: React.FC<ChamadoFormProps> = ({
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [tiposData, clientesData] = await Promise.all([
+        const [tiposData, clientesData, locaisData] = await Promise.all([
           ChamadoService.getTipos(),
-          ChamadoService.getClientes()
+          ChamadoService.getClientes(),
+          ChamadoService.getLocaisChamado(),
         ]);
         setTipos(tiposData);
         setClientes(clientesData);
+        setLocais(locaisData);
       } catch (error) {
         console.error('Erro ao carregar dados:', error);
       }
@@ -168,11 +172,23 @@ const ChamadoForm: React.FC<ChamadoFormProps> = ({
         />
 
         <Input
-          label="DT (Documento Técnico)"
+          label="DT (Identificador da Jiga)"
           required
           value={formData.cha_DT}
           onChange={(e) => handleChange('cha_DT', e.target.value)}
           placeholder="Ex: 000999"
+        />
+
+        <CustomSelect
+          label="Local"
+          required
+          value={formData.local_chamado}
+          onChange={(value) => handleChange('local_chamado', value)}
+          options={locais.map(local => ({
+            value: local.loc_id,
+            label: local.loc_nome
+          }))}
+          placeholder="Selecione o local do chamado"
         />
       </div>
 
