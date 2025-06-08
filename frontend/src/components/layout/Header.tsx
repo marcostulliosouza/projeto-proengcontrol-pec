@@ -3,6 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useGlobalAttendance } from '../../hooks/useGlobalAttendance';
 import { useNavigate } from 'react-router-dom';
 import Button from '../ui/Button';
+import NotificationPanel from '../ui/NotificationPanel'; 
 
 interface HeaderProps {
   onMenuClick: () => void;
@@ -86,13 +87,8 @@ const Header: React.FC<HeaderProps> = ({
             </div>
           )}
 
-          {/* Notificações - compacto */}
-          <button className="relative p-1.5 rounded-md hover:bg-secondary-100 transition-all duration-200">
-            <svg className="w-5 h-5 text-secondary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-5 5v-5zM15 17H9a4 4 0 01-4-4V9a4 4 0 014-4h6a4 4 0 014 4v4a4 4 0 01-4 4z" />
-            </svg>
-            <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-red-500 rounded-full"></span>
-          </button>
+          {/* NOVO: Painel de Notificações */}
+          <NotificationPanel />
 
           {/* User menu - compacto */}
           <div className="flex items-center space-x-2 bg-secondary-50 rounded-lg px-2 py-1.5">

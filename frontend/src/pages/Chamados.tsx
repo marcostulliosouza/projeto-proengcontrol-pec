@@ -107,41 +107,81 @@ const Chamados: React.FC = () => {
   useEffect(() => {
     if (!socket) return;
 
+    // NOVO: Listener para novos chamados criados
+    const handleNewChamadoCreated = (data: { 
+      chamado: Chamado; 
+      createdBy: string; 
+      timestamp: string 
+    }) => {
+      console.log('🆕 Novo chamado criado recebido:', data.chamado.cha_id);
+      
+      // CORREÇÃO: Recarregar lista IMEDIATAMENTE para incluir novo chamado
+      setTimeout(() => {
+        console.log('🔄 Recarregando lista após novo chamado...');
+        loadChamados(paginationRef.current.currentPage, false);
+      }, 500);
+    };
+  
+    const handleChamadoIniciado = (data: { chamadoId: number; userId?: number; userName?: string }) => {
+      console.log('🚀 Chamado iniciado recebido:', data.chamadoId);
+      
+      // CORREÇÃO: Recarregar lista IMEDIATAMENTE para reordenar
+      setTimeout(() => {
+        console.log('🔄 Recarregando lista após início de atendimento...');
+        loadChamados(paginationRef.current.currentPage, false);
+      }, 500); // Pequeno delay para garantir que backend processou
+    };
+  
     const handleChamadoFinalizado = (data: { chamadoId: number; userId?: number }) => {
       console.log('✅ Chamado finalizado recebido:', data.chamadoId);
       
       // Remover chamado da lista IMEDIATAMENTE
       setChamados(prev => prev.filter(chamado => chamado.cha_id !== data.chamadoId));
       
-      // Recarregar dados após um delay para sincronizar com backend
+      // CORREÇÃO: Recarregar para sincronizar após um delay
       setTimeout(() => {
         console.log('🔄 Recarregando dados após finalização...');
         loadChamados(paginationRef.current.currentPage, false);
       }, 1000);
     };
-
+  
     const handleChamadoCancelado = (data: { chamadoId: number; userId?: number }) => {
       console.log('🚫 Chamado cancelado recebido:', data.chamadoId);
       
-      // Atualizar status do chamado para aberto
-      setChamados(prev => prev.map(chamado =>
-        chamado.cha_id === data.chamadoId
-          ? { 
-            ...chamado, 
-            cha_status: 1,
-            colaborador_nome: undefined,
-            atc_colaborador: undefined
-          }
-          : chamado
-      ));
+      // CORREÇÃO: Recarregar lista IMEDIATAMENTE para reordenar
+      setTimeout(() => {
+        console.log('🔄 Recarregando lista após cancelamento...');
+        loadChamados(paginationRef.current.currentPage, false);
+      }, 500);
     };
+  
+    // NOVO: Listener específico para transferências
+    const handleChamadoTransferido = (data: { chamadoId: number; userId?: number; userName?: string }) => {
+      console.log('🔄 Chamado transferido recebido:', data.chamadoId);
+      
+      // CORREÇÃO: Recarregar lista para atualizar responsável
+      setTimeout(() => {
+        console.log('🔄 Recarregando lista após transferência...');
+        loadChamados(paginationRef.current.currentPage, false);
+      }, 500);
+    };
+    
 
+    
+  
+    // Registrar listeners CORRIGIDOS
+    socket.on('user_started_attendance', handleChamadoIniciado);
     socket.on('user_finished_attendance', handleChamadoFinalizado);
     socket.on('user_cancelled_attendance', handleChamadoCancelado);
-
+    socket.on('user_transferred_attendance', handleChamadoTransferido);
+    socket.on('new_chamado_created', handleNewChamadoCreated);
+  
     return () => {
+      socket.off('user_started_attendance', handleChamadoIniciado);
       socket.off('user_finished_attendance', handleChamadoFinalizado);
       socket.off('user_cancelled_attendance', handleChamadoCancelado);
+      socket.off('user_transferred_attendance', handleChamadoTransferido);
+      socket.off('new_chamado_created', handleNewChamadoCreated);
     };
   }, [socket, setChamados, loadChamados]);
 
@@ -158,12 +198,12 @@ const Chamados: React.FC = () => {
         }, 1000);
       }
     };
-
+  
     const handleTransferReceived = (event: CustomEvent) => {
       const { chamadoId, preservedTime, transferredBy } = event.detail;
       console.log(`🎯 Transferência recebida: ${chamadoId} (${preservedTime}s preservados) de ${transferredBy}`);
       
-      // Recarregar dados IMEDIATAMENTE
+      // CORREÇÃO: Recarregar dados IMEDIATAMENTE para mostrar novo responsável
       loadChamados(paginationRef.current.currentPage, false);
       
       // FORÇAR abertura do modal após recarregar dados
@@ -172,13 +212,23 @@ const Chamados: React.FC = () => {
         setAtendimentoModalOpen(true);
       }, 1000);
     };
-
+  
+    // NOVO: Listener para início de atendimento local (recarregar lista)
+    const handleAttendanceStarted = () => {
+      console.log('🚀 Atendimento iniciado localmente - recarregando lista');
+      setTimeout(() => {
+        loadChamados(paginationRef.current.currentPage, false);
+      }, 500);
+    };
+  
     window.addEventListener('chamadoFinalizado', handleChamadoFinalizadoCustom as EventListener);
     window.addEventListener('transferReceived', handleTransferReceived as EventListener);
+    window.addEventListener('attendanceStarted', handleAttendanceStarted as EventListener); // NOVO
     
     return () => {
       window.removeEventListener('chamadoFinalizado', handleChamadoFinalizadoCustom as EventListener);
       window.removeEventListener('transferReceived', handleTransferReceived as EventListener);
+      window.removeEventListener('attendanceStarted', handleAttendanceStarted as EventListener);
     };
   }, [setChamados, loadChamados]);
 
@@ -220,68 +270,66 @@ const Chamados: React.FC = () => {
     loadChamados(1);
   }, [filters, loadChamados]);
 
-  // No Chamados.tsx - CORREÇÃO DO USEEFFECT PROBLEMÁTICO
-
-// Controle do modal de atendimento - VERSÃO CORRIGIDA
-useEffect(() => {
-  // CORREÇÃO: Quarentena apenas para fechamentos MANUAIS, não para ações
-  const checkQuarantineForChamado = (chamadoId: number) => {
-    const wasJustClosed = sessionStorage.getItem(`atendimento_manually_closed_${chamadoId}`);
-    if (wasJustClosed) {
-      const closedTime = parseInt(wasJustClosed);
-      if (Date.now() - closedTime < 2000) {
-        console.log(`🔒 Modal do chamado ${chamadoId} foi fechado manualmente, aguardando...`);
-        return true;
-      } else {
-        sessionStorage.removeItem(`atendimento_manually_closed_${chamadoId}`);
-        return false;
-      }
-    }
-    return false;
-  };
-
-  // Verificar transferências pendentes PRIMEIRO
-  const checkPendingTransfer = () => {
-    const keys = Object.keys(sessionStorage).filter(key => key.startsWith('received_transfer_'));
-    for (const key of keys) {
-      try {
-        const transferData = JSON.parse(sessionStorage.getItem(key) || '{}');
-        if (transferData.chamadoId && transferData.autoOpen) {
-          if (isInAttendance && attendanceChamado?.cha_id === transferData.chamadoId) {
-            // Para transferências, sempre abrir (sem quarentena)
-            console.log(`🎯 Abrindo modal automaticamente para transferência ${transferData.chamadoId}`);
-            setAtendimentoModalOpen(true);
-            sessionStorage.removeItem(key);
-            return true;
-          }
+  // Controle do modal de atendimento - VERSÃO CORRIGIDA
+  useEffect(() => {
+    // CORREÇÃO: Quarentena apenas para fechamentos MANUAIS, não para ações
+    const checkQuarantineForChamado = (chamadoId: number) => {
+      const wasJustClosed = sessionStorage.getItem(`atendimento_manually_closed_${chamadoId}`);
+      if (wasJustClosed) {
+        const closedTime = parseInt(wasJustClosed);
+        if (Date.now() - closedTime < 2000) {
+          console.log(`🔒 Modal do chamado ${chamadoId} foi fechado manualmente, aguardando...`);
+          return true;
+        } else {
+          sessionStorage.removeItem(`atendimento_manually_closed_${chamadoId}`);
+          return false;
         }
-      } catch {
-        sessionStorage.removeItem(key);
       }
-    }
-    return false;
-  };
+      return false;
+    };
 
-  // Verificar transferências pendentes primeiro
-  if (checkPendingTransfer()) {
-    return;
-  }
+    // Verificar transferências pendentes PRIMEIRO
+    const checkPendingTransfer = () => {
+      const keys = Object.keys(sessionStorage).filter(key => key.startsWith('received_transfer_'));
+      for (const key of keys) {
+        try {
+          const transferData = JSON.parse(sessionStorage.getItem(key) || '{}');
+          if (transferData.chamadoId && transferData.autoOpen) {
+            if (isInAttendance && attendanceChamado?.cha_id === transferData.chamadoId) {
+              // Para transferências, sempre abrir (sem quarentena)
+              console.log(`🎯 Abrindo modal automaticamente para transferência ${transferData.chamadoId}`);
+              setAtendimentoModalOpen(true);
+              sessionStorage.removeItem(key);
+              return true;
+            }
+          }
+        } catch {
+          sessionStorage.removeItem(key);
+        }
+      }
+      return false;
+    };
 
-  // Lógica original para casos normais - CORRIGIDA
-  if (isInAttendance && attendanceChamado && !atendimentoModalOpen) {
-    // CORREÇÃO: Verificar quarentena apenas para fechamentos manuais
-    if (!checkQuarantineForChamado(attendanceChamado.cha_id)) {
-      console.log(`🔄 Abrindo modal de atendimento - chamado ${attendanceChamado.cha_id}`);
-      setAtendimentoModalOpen(true);
+    // Verificar transferências pendentes primeiro
+    if (checkPendingTransfer()) {
+      return;
     }
-  } else if (!isInAttendance && atendimentoModalOpen) {
-    console.log('🔄 Fechando modal - não está mais em atendimento');
-    setAtendimentoModalOpen(false);
-    
-    // CORREÇÃO: NÃO aplicar quarentena quando fechamento é por ação (cancelar/finalizar)
-    // A quarentena é aplicada apenas no handleCloseModal (fechamento manual)
-  }
-}, [isInAttendance, attendanceChamado, atendimentoModalOpen]);
+
+    // Lógica original para casos normais - CORRIGIDA
+    if (isInAttendance && attendanceChamado && !atendimentoModalOpen) {
+      // CORREÇÃO: Verificar quarentena apenas para fechamentos manuais
+      if (!checkQuarantineForChamado(attendanceChamado.cha_id)) {
+        console.log(`🔄 Abrindo modal de atendimento - chamado ${attendanceChamado.cha_id}`);
+        setAtendimentoModalOpen(true);
+      }
+    } else if (!isInAttendance && atendimentoModalOpen) {
+      console.log('🔄 Fechando modal - não está mais em atendimento');
+      setAtendimentoModalOpen(false);
+      
+      // CORREÇÃO: NÃO aplicar quarentena quando fechamento é por ação (cancelar/finalizar)
+      // A quarentena é aplicada apenas no handleCloseModal (fechamento manual)
+    }
+  }, [isInAttendance, attendanceChamado, atendimentoModalOpen]);
 
   // Limpar loading de ações
   useEffect(() => {
@@ -316,6 +364,7 @@ useEffect(() => {
     setEditingChamado(null);
     setModalOpen(true);
   }, []);
+  
 
   const handleViewChamado = useCallback(async (chamado: Chamado) => {
     try {
@@ -354,11 +403,15 @@ useEffect(() => {
     try {
       console.log(`🚀 Iniciando atendimento do chamado ${chamado.cha_id}`);
       const attendanceData = await startAttendance(chamado.cha_id);
-
-      if (!attendanceData) {
-        console.log('❌ Falha ao iniciar atendimento');
+  
+      if (attendanceData) {
+        console.log('✅ Atendimento iniciado com sucesso');
+        
+        // NOVO: Disparar evento para recarregar lista localmente
+        window.dispatchEvent(new CustomEvent('attendanceStarted', { 
+          detail: { chamadoId: chamado.cha_id } 
+        }));
       }
-      // Se sucesso, o socket vai atualizar a UI automaticamente
     } catch (error) {
       console.error('Erro ao iniciar atendimento:', error);
     }
@@ -402,6 +455,18 @@ useEffect(() => {
     setAtendimentoModalOpen(false);
     // NÃO aplicar quarentena aqui
   }, []);
+
+
+  // NOVO: Callback para quando chamado for criado com sucesso
+  const handleChamadoCreated = useCallback(() => {
+    handleCloseModal();
+    
+    // Recarregar lista imediatamente para quem criou
+    setTimeout(() => {
+      console.log('🔄 Recarregando lista após criar chamado...');
+      loadChamados(paginationRef.current.currentPage, false);
+    }, 500);
+  }, [loadChamados, handleCloseModal]);
 
   useEffect(() => {
     const cleanupOldQuarantines = () => {
@@ -881,10 +946,7 @@ useEffect(() => {
       >
         <ChamadoForm
           chamado={editingChamado}
-          onSubmit={() => {
-            handleCloseModal();
-            loadChamados(pagination.currentPage);
-          }}
+          onSubmit={handleChamadoCreated}
           onCancel={handleCloseModal}
         />
       </Modal>

@@ -2,10 +2,11 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthContext'
-import { SocketProvider } from './contexts/SocketContext' // Nova importação
+import { SocketProvider } from './contexts/SocketContext'
+import { ToastProvider } from './contexts/ToastContext'
+import { NotificationProvider } from './contexts/NotificationContext' // NOVO
 import App from './App.tsx'
 import './index.css'
-import { ToastProvider } from './contexts/ToastContext';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
@@ -13,7 +14,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <AuthProvider>
         <ToastProvider>
           <SocketProvider>
-            <App />
+            <NotificationProvider>
+              <App />
+            </NotificationProvider>
           </SocketProvider>
         </ToastProvider>
       </AuthProvider>

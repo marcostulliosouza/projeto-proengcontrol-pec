@@ -125,22 +125,19 @@ export const useChamadosRealTime = (initialChamados: Chamado[]) => {
 
     const handleUserStarted = (data: UserAttendanceData & { motivo?: string }) => {
       console.log('🚀 Usuário iniciou:', data.chamadoId, 'motivo:', data.motivo);
-    
+  
       // Para transferências, preservar o tempo original
       let realStartTime: Date;
       let initialSeconds = 0;
       
       if (data.motivo === 'transferred_general' && data.startTime) {
-        // USAR tempo original da transferência
         realStartTime = new Date(data.startTime);
         initialSeconds = Math.floor((new Date().getTime() - realStartTime.getTime()) / 1000);
-        console.log(`⏰ Timer de transferência: ${initialSeconds}s desde ${data.startTime}`);
       } else {
-        // Novo atendimento - usar tempo fornecido
         realStartTime = new Date(data.startTime);
         initialSeconds = Math.floor((new Date().getTime() - realStartTime.getTime()) / 1000);
       }
-    
+  
       // Adicionar timer
       setTimers(prev => {
         const filtered = prev.filter(timer => timer.chamadoId !== data.chamadoId);
@@ -154,19 +151,33 @@ export const useChamadosRealTime = (initialChamados: Chamado[]) => {
           realStartTime
         }];
       });
-    
-      // Atualizar chamados
-      setChamados(prev => prev.map(chamado => 
-        chamado.cha_id === data.chamadoId 
-          ? { 
-            ...chamado, 
-            cha_status: 2,
-            colaborador_nome: data.userName,
-            atc_colaborador: data.userId
-          }
-          : chamado
-      ));
-    
+  
+      // CORREÇÃO: Atualizar status E forçar reordenação
+      setChamados(prev => {
+        const updated = prev.map(chamado => 
+          chamado.cha_id === data.chamadoId 
+            ? { 
+              ...chamado, 
+              cha_status: 2,
+              colaborador_nome: data.userName,
+              atc_colaborador: data.userId
+            }
+            : chamado
+        );
+        
+        // NOVO: Reordenar array localmente baseado no status
+        return updated.sort((a, b) => {
+          // Em atendimento (status 2) primeiro
+          if (a.cha_status === 2 && b.cha_status !== 2) return -1;
+          if (b.cha_status === 2 && a.cha_status !== 2) return 1;
+          
+          // Entre status iguais, manter ordem por data
+          const dateA = new Date(a.cha_data_hora_abertura).getTime();
+          const dateB = new Date(b.cha_data_hora_abertura).getTime();
+          return dateB - dateA;
+        });
+      });
+  
       // Limpar loading
       if (window.clearActionLoading) {
         window.clearActionLoading(data.chamadoId);
@@ -193,22 +204,38 @@ export const useChamadosRealTime = (initialChamados: Chamado[]) => {
 
     const handleUserCancelled = (data: UserFinishedData) => {
       console.log('❌ Usuário cancelou:', data.chamadoId);
-
-      // remover timer
+  
+      // Remover timer
       setTimers(prev => prev.filter(timer => timer.chamadoId !== data.chamadoId));
-
-      // IMPORTANTE: Atualizar o status do chamado de volta para aberto
-      setChamados(prev => prev.map(chamado =>
-        chamado.cha_id === data.chamadoId
-          ? { 
-            ...chamado, 
-            cha_status: 1, 
-            colaborador_nome: undefined,
-            atc_colaborador: undefined,
-          }
-          : chamado
-      ));
-
+  
+      // CORREÇÃO: Atualizar status E forçar reordenação
+      setChamados(prev => {
+        const updated = prev.map(chamado =>
+          chamado.cha_id === data.chamadoId
+            ? { 
+              ...chamado, 
+              cha_status: 1, 
+              colaborador_nome: undefined,
+              atc_colaborador: undefined,
+            }
+            : chamado
+        );
+        
+        // NOVO: Reordenar array localmente
+        return updated.sort((a, b) => {
+          // Em atendimento primeiro, depois abertos
+          const priorityA = a.cha_status === 2 ? 1 : a.cha_status === 1 ? 2 : 3;
+          const priorityB = b.cha_status === 2 ? 1 : b.cha_status === 1 ? 2 : 3;
+          
+          if (priorityA !== priorityB) return priorityA - priorityB;
+          
+          // Entre status iguais, por data
+          const dateA = new Date(a.cha_data_hora_abertura).getTime();
+          const dateB = new Date(b.cha_data_hora_abertura).getTime();
+          return dateB - dateA;
+        });
+      });
+  
       if (window.clearActionLoading) {
         window.clearActionLoading(data.chamadoId);
       }

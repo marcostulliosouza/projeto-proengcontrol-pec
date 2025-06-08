@@ -15,6 +15,7 @@ import chamadoRoutes from './routes/chamadoRoutes';
 import { testConnection } from './config/database';
 import { errorHandler } from './middlewares/errorHandler';
 import { AtendimentoAtivoModel } from './models/AtendimentoAtivo';
+import { ChamadoModel } from './models/Chamado';
 
 // Configurar variáveis de ambiente
 dotenv.config();
@@ -235,6 +236,9 @@ io.on('connection', (socket) => {
         socket.emit('transfer_error', { message: 'Atendimento não encontrado', chamadoId });
         return;
       }
+
+      // NOVO: Buscar dados completos do chamado para notificação
+      const chamadoCompleto = await ChamadoModel.findById(chamadoId);
       
       // IMPORTANTE: Preservar o tempo original de início
       const startTimeOriginal = atendimentoAtual.atc_data_hora_inicio;
@@ -263,6 +267,15 @@ io.on('connection', (socket) => {
         transferredBy: antigoUser?.nome || 'Usuário',
         timestamp,
         autoOpen: true
+      });
+
+      io.to(novoUserEntry.socketId).emit('transfer_notification', {
+        chamadoId,
+        clienteNome: atendimentoAtual.cliente_nome || 'Cliente não identificado',
+        transferredBy: antigoUser?.nome || 'Usuário',
+        transferredById: antigoColaboradorId,
+        timestamp,
+        type: 'transfer_received'
       });
   
       // 3. Broadcast para todos os outros usuários

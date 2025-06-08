@@ -96,14 +96,49 @@ export const createChamado = asyncHandler(async (req: AuthRequest, res: Response
     cha_descricao: cha_descricao.trim()
   };
 
-  const chamadoId = await ChamadoModel.create(chamadoData, operador);
+  try {
+    const chamadoId = await ChamadoModel.create(chamadoData, operador);
 
-  res.status(201).json({
-    success: true,
-    message: 'Chamado criado com sucesso',
-    data: { id: chamadoId },
-    timestamp: new Date().toISOString()
-  } as ApiResponse);
+    // NOVO: Buscar o chamado criado com todos os dados
+    const novoChamado = await ChamadoModel.findById(chamadoId);
+
+    // NOVO: Emitir evento para todos os usuários conectados
+    const io = req.app.get('io');
+    if (io && novoChamado) {
+      console.log(`📢 Broadcasting novo chamado ${chamadoId} para todos usuários`);
+      
+      // Evento para atualizar listas
+      io.emit('new_chamado_created', {
+        chamado: novoChamado,
+        createdBy: req.user?.nome || operador,
+        timestamp: new Date().toISOString()
+      });
+
+      // NOVO: Evento de notificação (exceto para quem criou)
+      io.emit('new_chamado_notification', {
+        chamadoId: novoChamado.cha_id,
+        clienteNome: novoChamado.cliente_nome,
+        descricao: novoChamado.cha_descricao?.substring(0, 100) + '...',
+        createdBy: req.user?.nome || operador,
+        createdById: req.user?.id,
+        timestamp: new Date().toISOString(),
+        type: 'new_chamado'
+      });
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Chamado criado com sucesso',
+      data: { id: chamadoId },
+      timestamp: new Date().toISOString()
+    } as ApiResponse);
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      message: (error instanceof Error ? error.message : 'Erro ao criar chamado'),
+      timestamp: new Date().toISOString()
+    } as ApiResponse);
+  }
 });
 
 export const updateChamado = asyncHandler(async (req: AuthRequest, res: Response) => {
