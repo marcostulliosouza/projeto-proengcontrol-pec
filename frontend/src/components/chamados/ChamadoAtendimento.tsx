@@ -146,10 +146,13 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
         detail: { chamadoId: chamado.cha_id, status: 3 } 
       }));
   
+      // CORREÇÃO: REMOVER quarentena - finalização é uma ação intencional
+      // sessionStorage.setItem(`atendimento_just_closed_${chamado.cha_id}`, Date.now().toString());
+  
       // Fechar modal
       setTimeout(() => {
         onCancel();
-      }, 300); // Reduzido para 300ms
+      }, 300);
       
     } catch (error) {
       console.error('Erro ao finalizar chamado:', error);
@@ -178,10 +181,13 @@ const ChamadoAtendimento: React.FC<ChamadoAtendimentoProps> = ({
       // NOVO: Forçar limpeza imediata do estado global via evento
       window.dispatchEvent(new CustomEvent('forceCleanAttendance'));
       
+      // CORREÇÃO: REMOVER quarentena - cancelamento é uma ação intencional
+      // sessionStorage.setItem(`atendimento_just_closed_${chamado.cha_id}`, Date.now().toString());
+      
       // Fechar modal
       setTimeout(() => {
         onCancel();
-      }, 300); // Reduzido para 300ms
+      }, 300);
       
     } catch (error) {
       console.error('Erro ao cancelar atendimento:', error);

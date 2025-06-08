@@ -270,6 +270,7 @@ export class ChamadoModel {
           
           -- Campos auxiliares para ordenação
           CASE WHEN c.cha_status = 3 THEN 1 ELSE 0 END AS is_finalizado,
+          CASE WHEN c.cha_status > 1 THEN 0 ELSE 1 END AS is_em_atendimento,
           CASE WHEN c.cha_status != 3 THEN 
               CASE WHEN c.cha_data_hora_abertura <= NOW() THEN 0 ELSE 1 END 
           ELSE 1 END AS ordenacao_prioritaria,
@@ -286,13 +287,14 @@ export class ChamadoModel {
         ${whereClause}
         ORDER BY 
           is_finalizado,  -- Chamados não finalizados primeiro
+          is_em_atendimento,  -- Chamados em atendimento aparecem antes dos não atendidos
           ordenacao_prioritaria,  -- Dentro dos não finalizados, ativos primeiro
           data_ordenacao DESC,  -- Ordena por data (abertura ou término)
           c.cha_status DESC,
           duracao_total DESC,
           duracao_atendimento DESC
         LIMIT ${pagination.limit} OFFSET ${pagination.offset}
-    `;
+      `;
       console.log('🔍 Executando queries...');
 
       // Executar queries com tratamento de erro

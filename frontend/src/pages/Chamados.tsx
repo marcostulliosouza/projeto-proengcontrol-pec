@@ -34,6 +34,9 @@ const Chamados: React.FC = () => {
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [selectedChamado, setSelectedChamado] = useState<Chamado | null>(null);
   const [atendimentoModalOpen, setAtendimentoModalOpen] = useState(false);
+  
+  // Adicionar ref para controlar o tipo de fechamento
+  const modalCloseReason = useRef<'manual' | 'action' | null>(null);
 
   // Dados auxiliares
   const [tipos, setTipos] = useState<TipoChamado[]>([]);
@@ -221,17 +224,21 @@ const Chamados: React.FC = () => {
 
 // Controle do modal de atendimento - VERSÃO CORRIGIDA
 useEffect(() => {
-  // NOVA: Flag para evitar abertura imediata após fechamento
-  const wasJustClosed = sessionStorage.getItem('atendimento_just_closed');
-  if (wasJustClosed) {
-    const closedTime = parseInt(wasJustClosed);
-    if (Date.now() - closedTime < 3000) { // 3 segundos de "quarentena"
-      console.log('🔒 Modal foi fechado recentemente, aguardando...');
-      return;
-    } else {
-      sessionStorage.removeItem('atendimento_just_closed');
+  // CORREÇÃO: Quarentena apenas para fechamentos MANUAIS, não para ações
+  const checkQuarantineForChamado = (chamadoId: number) => {
+    const wasJustClosed = sessionStorage.getItem(`atendimento_manually_closed_${chamadoId}`);
+    if (wasJustClosed) {
+      const closedTime = parseInt(wasJustClosed);
+      if (Date.now() - closedTime < 2000) {
+        console.log(`🔒 Modal do chamado ${chamadoId} foi fechado manualmente, aguardando...`);
+        return true;
+      } else {
+        sessionStorage.removeItem(`atendimento_manually_closed_${chamadoId}`);
+        return false;
+      }
     }
-  }
+    return false;
+  };
 
   // Verificar transferências pendentes PRIMEIRO
   const checkPendingTransfer = () => {
@@ -241,6 +248,7 @@ useEffect(() => {
         const transferData = JSON.parse(sessionStorage.getItem(key) || '{}');
         if (transferData.chamadoId && transferData.autoOpen) {
           if (isInAttendance && attendanceChamado?.cha_id === transferData.chamadoId) {
+            // Para transferências, sempre abrir (sem quarentena)
             console.log(`🎯 Abrindo modal automaticamente para transferência ${transferData.chamadoId}`);
             setAtendimentoModalOpen(true);
             sessionStorage.removeItem(key);
@@ -259,15 +267,19 @@ useEffect(() => {
     return;
   }
 
-  // Lógica original para casos normais
+  // Lógica original para casos normais - CORRIGIDA
   if (isInAttendance && attendanceChamado && !atendimentoModalOpen) {
-    console.log('🔄 Abrindo modal de atendimento - usuário em atendimento');
-    setAtendimentoModalOpen(true);
+    // CORREÇÃO: Verificar quarentena apenas para fechamentos manuais
+    if (!checkQuarantineForChamado(attendanceChamado.cha_id)) {
+      console.log(`🔄 Abrindo modal de atendimento - chamado ${attendanceChamado.cha_id}`);
+      setAtendimentoModalOpen(true);
+    }
   } else if (!isInAttendance && atendimentoModalOpen) {
     console.log('🔄 Fechando modal - não está mais em atendimento');
     setAtendimentoModalOpen(false);
-    // NOVO: Marcar que o modal foi fechado para evitar reabertura imediata
-    sessionStorage.setItem('atendimento_just_closed', Date.now().toString());
+    
+    // CORREÇÃO: NÃO aplicar quarentena quando fechamento é por ação (cancelar/finalizar)
+    // A quarentena é aplicada apenas no handleCloseModal (fechamento manual)
   }
 }, [isInAttendance, attendanceChamado, atendimentoModalOpen]);
 
@@ -362,15 +374,76 @@ useEffect(() => {
   }, [actionLoading, isUserInAttendance, currentAttendance, getTimer, startAttendance]);
 
   const handleCloseModal = useCallback(() => {
-    console.log('🔄 Fechando modais...');
+    console.log('🔄 Fechando modais MANUALMENTE...');
+    
+    // Marcar o tipo de fechamento como manual
+    modalCloseReason.current = 'manual';
+    
     setModalOpen(false);
     setDetailModalOpen(false);
     setAtendimentoModalOpen(false);
     setEditingChamado(null);
     setSelectedChamado(null);
     
-    // NOVO: Marcar que modal foi fechado intencionalmente
-    sessionStorage.setItem('atendimento_just_closed', Date.now().toString()); 
+    // CORREÇÃO: Quarentena APENAS para fechamentos manuais do modal de atendimento
+    if (attendanceChamado && atendimentoModalOpen) {
+      sessionStorage.setItem(`atendimento_manually_closed_${attendanceChamado.cha_id}`, Date.now().toString());
+      console.log(`🔒 Quarentena aplicada para chamado ${attendanceChamado.cha_id} (fechamento manual)`);
+    }
+  }, [attendanceChamado, atendimentoModalOpen]);
+  
+  // NOVA: Função para fechamento por ações (sem quarentena)
+  const handleActionClose = useCallback(() => {
+    console.log('🔄 Fechando modal por AÇÃO (sem quarentena)...');
+    
+    // Marcar o tipo de fechamento como ação
+    modalCloseReason.current = 'action';
+    
+    setAtendimentoModalOpen(false);
+    // NÃO aplicar quarentena aqui
+  }, []);
+
+  useEffect(() => {
+    const cleanupOldQuarantines = () => {
+      const keys = Object.keys(sessionStorage).filter(key => 
+        key.startsWith('atendimento_manually_closed_') || // CORRIGIDO
+        key.startsWith('received_transfer_')
+      );
+      
+      const now = Date.now();
+      let cleaned = 0;
+      
+      keys.forEach(key => {
+        try {
+          if (key.startsWith('atendimento_manually_closed_')) { // CORRIGIDO
+            const timestamp = parseInt(sessionStorage.getItem(key) || '0');
+            if (now - timestamp > 30000) {
+              sessionStorage.removeItem(key);
+              cleaned++;
+            }
+          } else if (key.startsWith('received_transfer_')) {
+            const data = JSON.parse(sessionStorage.getItem(key) || '{}');
+            const timestamp = new Date(data.timestamp || 0).getTime();
+            if (now - timestamp > 60000) {
+              sessionStorage.removeItem(key);
+              cleaned++;
+            }
+          }
+        } catch {
+          sessionStorage.removeItem(key);
+          cleaned++;
+        }
+      });
+      
+      if (cleaned > 0) {
+        console.log(`🧹 Limpeza: ${cleaned} registros antigos removidos do sessionStorage`);
+      }
+    };
+  
+    const interval = setInterval(cleanupOldQuarantines, 30000);
+    cleanupOldQuarantines();
+    
+    return () => clearInterval(interval);
   }, []);
 
   const formatDuration = useCallback((minutes: number) => {
@@ -1220,7 +1293,7 @@ useEffect(() => {
       {/* Modal de Atendimento */}
       <Modal
         isOpen={atendimentoModalOpen}
-        onClose={handleCloseModal}
+        onClose={handleCloseModal} // Fechamento manual (com quarentena)
         title={`Atendimento - Chamado #${attendanceChamado?.cha_id}`}
         size="xl"
         preventClose={true}
@@ -1230,9 +1303,9 @@ useEffect(() => {
             chamado={attendanceChamado}
             onFinish={(updatedChamado) => {
               handleChamadoUpdated(updatedChamado);
-              handleCloseModal();
+              handleActionClose(); // CORRIGIDO: Usar fechamento por ação (sem quarentena)
             }}
-            onCancel={handleCloseModal}
+            onCancel={handleActionClose} // CORRIGIDO: Usar fechamento por ação (sem quarentena)
           />
         )}
       </Modal>
