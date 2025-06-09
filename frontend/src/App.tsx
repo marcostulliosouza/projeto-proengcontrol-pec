@@ -4,6 +4,7 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Dispositivos from './pages/Dispositivos';
 import Chamados from './pages/Chamados'; // Nova importação
+import Manutencao from './pages/Manutencao';
 import ProtectedRoute from './components/layout/ProtectedRoute';
 import MainLayout from './components/layout/MainLayout';
 
@@ -38,6 +39,16 @@ function App() {
             <ProtectedRoute>
               <MainLayout>
                 <Chamados />
+              </MainLayout>
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/manutencao" 
+          element={
+            <ProtectedRoute>
+              <MainLayout>
+                <Manutencao />
               </MainLayout>
             </ProtectedRoute>
           } 

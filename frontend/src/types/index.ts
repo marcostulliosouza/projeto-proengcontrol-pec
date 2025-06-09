@@ -203,3 +203,12 @@ export interface TransferirChamadoData {
 }
 
 export type CategoriaColaborador = typeof CategoriaColaborador[keyof typeof CategoriaColaborador];
+
+// export interface ManutencaoTypes {
+//   DispositivoManutencao: DispositivoManutencao;
+//   ManutencaoPreventiva: ManutencaoPreventiva;
+//   FormularioManutencao: FormularioManutencao;
+//   ItemFormulario: ItemFormulario;
+//   RespostaItem: RespostaItem;
+//   MetricasManutencao: MetricasManutencao;
+// }

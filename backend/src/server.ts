@@ -11,6 +11,7 @@ import 'module-alias/register';
 import authRoutes from './routes/authRoutes';
 import dispositivoRoutes from './routes/dispositivoRoutes';
 import chamadoRoutes from './routes/chamadoRoutes';
+import manutencaoRoutes from './routes/manutencaoRoutes';
 
 import { testConnection } from './config/database';
 import { errorHandler } from './middlewares/errorHandler';
@@ -495,6 +496,7 @@ app.get(API_PREFIX, (req, res) => {
 app.use(`${API_PREFIX}/auth`, authRoutes);
 app.use(`${API_PREFIX}/dispositivos`, dispositivoRoutes);
 app.use(`${API_PREFIX}/chamados`, chamadoRoutes);
+app.use(`${API_PREFIX}/manutencao`, manutencaoRoutes);
 
 // Middleware de tratamento de erros (deve ser o último)
 app.use(errorHandler);
