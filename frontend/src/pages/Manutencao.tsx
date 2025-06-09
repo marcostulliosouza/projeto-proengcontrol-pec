@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Button, Table } from '../components/ui';
+import Pagination from '../components/ui/Pagination';
 import { ManutencaoService, type DispositivoManutencao, type ManutencaoPreventiva } from '../services/manutencaoService';
 import { useAuth } from '../contexts/AuthContext';
 import { usePermissions } from '../types/permissions';
 import ManutencaoAtiva from '../components/manutencao/ManutencaoAtiva';
 import IniciarManutencaoModal from '../components/manutencao/IniciarManutencaoModal';
 import HistoricoManutencoes from '../components/manutencao/HistoricoManutencoes';
-import MetricasManutencao  from '../components/manutencao/MetricasManutencao';
+import MetricasManutencao from '../components/manutencao/MetricasManutencao';
+import type { PaginationInfo } from '../types';
 
 const Manutencao: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dispositivos' | 'historico' | 'metricas'>('dispositivos');
@@ -16,13 +18,33 @@ const Manutencao: React.FC = () => {
   const [showIniciarModal, setShowIniciarModal] = useState(false);
   const [dispositivoSelecionado, setDispositivoSelecionado] = useState<DispositivoManutencao | null>(null);
 
+  // Estado da paginação para dispositivos
+  const [paginationDispositivos, setPaginationDispositivos] = useState<PaginationInfo>({
+    currentPage: 1,
+    totalPages: 1,
+    totalItems: 0,
+    itemsPerPage: 10,
+  });
+
   const { state: authState } = useAuth();
   const permissions = usePermissions(authState.user?.categoria);
+
+  
 
   // Carregar dados iniciais
   useEffect(() => {
     loadData();
   }, []);
+
+  // Atualizar paginação quando os dispositivos mudarem
+  useEffect(() => {
+    setPaginationDispositivos(prev => ({
+      ...prev,
+      totalItems: dispositivos.length,
+      totalPages: Math.ceil(dispositivos.length / prev.itemsPerPage),
+      currentPage: 1 // Reset para primeira página quando dados mudarem
+    }));
+  }, [dispositivos]);
 
   const loadData = async () => {
     try {
@@ -39,6 +61,13 @@ const Manutencao: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handlePageChangeDispositivos = (page: number) => {
+    setPaginationDispositivos(prev => ({
+      ...prev,
+      currentPage: page
+    }));
   };
 
   const handleIniciarManutencao = (dispositivo: DispositivoManutencao) => {
@@ -77,6 +106,12 @@ const Manutencao: React.FC = () => {
       return <span className="text-blue-600">{placasRestantes} placas restantes</span>;
     }
   };
+
+  // Paginação local para dispositivos
+  const dispositivosPaginados = dispositivos.slice(
+    (paginationDispositivos.currentPage - 1) * paginationDispositivos.itemsPerPage,
+    paginationDispositivos.currentPage * paginationDispositivos.itemsPerPage
+  );
 
   const columnsDispositivos = [
     {
@@ -199,18 +234,7 @@ const Manutencao: React.FC = () => {
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Manutenção Preventiva</h1>
-          <div className="flex items-center space-x-4 mt-1">
-            <p className="text-sm text-gray-600">
-              {dispositivos.filter(d => d.necessita_manutencao).length} dispositivos precisam de manutenção
-            </p>
-            {manutencaoAtiva && (
-              <div className="flex items-center space-x-2 bg-orange-100 text-orange-800 px-3 py-1 rounded-full text-sm">
-                <span className="w-2 h-2 bg-orange-500 rounded-full animate-pulse"></span>
-                <span>Manutenção em andamento: {manutencaoAtiva.dispositivo_descricao}</span>
-              </div>
-            )}
-          </div>
+          <h1 className="text-2xl font-bold text-gray-900">Manutenção Preventiva</h1> 
         </div>
         <div className="flex space-x-2">
           <Button
@@ -243,7 +267,7 @@ const Manutencao: React.FC = () => {
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
           >
-            🔧 Dispositivos ({dispositivos.length})
+            🔧 Dispositivos ({paginationDispositivos.totalItems})
           </button>
           <button
             onClick={() => setActiveTab('historico')}
@@ -272,29 +296,120 @@ const Manutencao: React.FC = () => {
 
       {/* Tab Content */}
       {activeTab === 'dispositivos' && (
-        <Card>
-          <div className="mb-4 flex justify-between items-center">
-            <h2 className="text-lg font-semibold text-gray-900">
-              Dispositivos para Manutenção
-            </h2>
-            <div className="flex space-x-2">
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                <span className="w-2 h-2 bg-red-500 rounded-full mr-2"></span>
-                {dispositivos.filter(d => d.necessita_manutencao).length} Precisam de Manutenção
-              </span>
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
-                {dispositivos.filter(d => !d.necessita_manutencao).length} Em Dia
-              </span>
+        <div className="space-y-4">
+          
+
+          {/* Tabela principal */}
+          <Card>
+            <div className="mb-6">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold text-gray-900">
+                  Dispositivos para Manutenção
+                </h2>
+                <Button
+                  variant="secondary"
+                  onClick={loadData}
+                  disabled={loading}
+                  className="flex items-center space-x-2"
+                >
+                  <span>🔄</span>
+                  <span>Atualizar</span>
+                </Button>
+              </div>
+
+              {/* Status cards */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-red-600 text-sm font-medium">Manutenção Necessária</p>
+                      <p className="text-2xl font-bold text-red-700">
+                        {dispositivos.filter(d => d.necessita_manutencao).length}
+                      </p>
+                    </div>
+                    <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+                      🚨
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-green-600 text-sm font-medium">Em Dia</p>
+                      <p className="text-2xl font-bold text-green-700">
+                        {dispositivos.filter(d => !d.necessita_manutencao).length}
+                      </p>
+                    </div>
+                    <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+                      ✅
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-blue-600 text-sm font-medium">Total</p>
+                      <p className="text-2xl font-bold text-blue-700">{dispositivos.length}</p>
+                    </div>
+                    <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                      📋
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Informações de paginação melhorada */}
+              <div className="flex items-center justify-between text-sm text-gray-600 mb-4">
+                <div>
+                  Mostrando <span className="font-medium text-gray-900">
+                    {((paginationDispositivos.currentPage - 1) * paginationDispositivos.itemsPerPage) + 1}
+                  </span> até <span className="font-medium text-gray-900">
+                    {Math.min(paginationDispositivos.currentPage * paginationDispositivos.itemsPerPage, paginationDispositivos.totalItems)}
+                  </span> de <span className="font-medium text-gray-900">
+                    {paginationDispositivos.totalItems}
+                  </span> dispositivos
+                </div>
+                
+                <div className="flex items-center space-x-2">
+                  <span>Itens por página:</span>
+                  <select 
+                    value={paginationDispositivos.itemsPerPage}
+                    onChange={(e) => setPaginationDispositivos(prev => ({
+                      ...prev,
+                      itemsPerPage: parseInt(e.target.value),
+                      currentPage: 1
+                    }))}
+                    className="border border-gray-300 rounded px-2 py-1 text-sm"
+                  >
+                    <option value={5}>5</option>
+                    <option value={10}>10</option>
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                  </select>
+                </div>
+              </div>
             </div>
-          </div>
-          <Table
-            columns={columnsDispositivos}
-            data={dispositivos as unknown as Record<string, unknown>[]}
-            loading={loading}
-            emptyMessage="Nenhum dispositivo com manutenção configurada"
-          />
-        </Card>
+
+            <Table
+              columns={columnsDispositivos}
+              data={dispositivosPaginados as unknown as Record<string, unknown>[]}
+              loading={loading}
+              emptyMessage="Nenhum dispositivo com manutenção configurada"
+            />
+
+            {/* Paginação melhorada */}
+            {paginationDispositivos.totalPages > 1 && (
+              <div className="mt-6 border-t border-gray-200 pt-4">
+                <Pagination
+                  pagination={paginationDispositivos}
+                  onPageChange={handlePageChangeDispositivos}
+                />
+              </div>
+            )}
+          </Card>
+        </div>
       )}
 
       {activeTab === 'historico' && (

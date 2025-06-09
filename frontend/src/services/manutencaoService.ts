@@ -1,4 +1,19 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { ApiService } from './api';
+
+export interface DispositivoDetalhes {
+  dis_id: number;
+  dis_descricao: string;
+  dis_codigo_sap: string;
+  cliente_nome: string;
+  dim_formulario_manutencao: number;
+  formulario_descricao: string;
+  dim_tipo_intervalo: 'DIA' | 'PLACA';
+  dim_intervalo_dias: number;
+  dim_intervalo_placas: number;
+  dim_placas_executadas: number;
+  dim_data_ultima_manutencao: string | null;
+}
 
 export interface DispositivoManutencao {
   dis_id: number;
@@ -44,7 +59,7 @@ export interface ItemFormulario {
 export interface RespostaItem {
   rif_item: number;
   rif_log_manutencao: number;
-  rif_ok: number;
+  rif_ok: number; // ✅ CORRIGIDO: 0=Não OK, 1=OK (era boolean)
   rif_observacao: string;
   item_descricao?: string;
 }
@@ -70,6 +85,11 @@ export class ManutencaoService {
     return await ApiService.get<ManutencaoPreventiva | null>('/manutencao/minha-manutencao');
   }
 
+   // Buscar detalhes específicos do dispositivo
+   static async getDispositivoDetalhes(dispositivoId: number): Promise<DispositivoDetalhes> {
+    return await ApiService.get<DispositivoDetalhes>(`/manutencao/dispositivo/${dispositivoId}/detalhes`);
+  }
+
   // Iniciar manutenção
   static async iniciarManutencao(data: {
     dispositivoId: number;
@@ -79,8 +99,30 @@ export class ManutencaoService {
     intervaloDias?: number;
     intervaloPlacas?: number;
     placasExecutadas?: number;
-  }): Promise<{ id: number }> {
-    return await ApiService.post<{ id: number }>('/manutencao/iniciar', data);
+  }): Promise<{ success: boolean; id?: number; error?: string }> {
+    try {
+      const response = await ApiService.post<{ id: number }>('/manutencao/iniciar', data);
+      return { success: true, id: response.id };
+    } catch (error: any) {
+      // Tratar erro 409 (conflito)
+      if (error.response?.status === 409) {
+        return {
+          success: false,
+          error: error.response.data.message || 'Dispositivo já está sendo atendido'
+        };
+      }
+      throw error;
+    }
+  }
+
+   // Obter estatísticas em tempo real
+   static async getStatusDispositivos(): Promise<{
+    total: number;
+    emManutencao: number;
+    necessitamManutencao: number;
+    emDia: number;
+  }> {
+    return await ApiService.get('/manutencao/status-dispositivos');
   }
 
   // Finalizar manutenção

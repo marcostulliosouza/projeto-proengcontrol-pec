@@ -27,6 +27,7 @@ const HistoricoManutencoes: React.FC = () => {
 
   useEffect(() => {
     loadHistorico();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtros, pagination.currentPage]);
 
   const loadHistorico = async () => {

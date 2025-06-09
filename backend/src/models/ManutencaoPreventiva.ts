@@ -232,7 +232,7 @@ export class ManutencaoPreventivaModel {
         const values = respostas.map(r => [
           r.rif_item,
           r.rif_log_manutencao,
-          r.rif_ok,
+          r.rif_ok === 1 ? Buffer.from([1]) : Buffer.from([0]),
           r.rif_observacao.toUpperCase()
         ]);
 
@@ -383,15 +383,218 @@ export class ManutencaoPreventivaModel {
       
       const respostasResult = await executeQuery(respostasQuery, [manutencaoId]);
 
+      console.log('🔍 Respostas brutas do banco:', respostasResult);
+
+      // Converter valores binary para number
+      const respostasConvertidas = Array.isArray(respostasResult) 
+        ? respostasResult.map((r: any) => {
+            let rif_ok_final = r.rif_ok;
+            
+            // Converter diferentes formatos possíveis
+            if (Buffer.isBuffer(r.rif_ok)) {
+              rif_ok_final = r.rif_ok[0] === 1 ? 1 : 0;
+            } else if (typeof r.rif_ok === 'string') {
+              rif_ok_final = r.rif_ok === '1' ? 1 : 0;
+            } else if (typeof r.rif_ok === 'boolean') {
+              rif_ok_final = r.rif_ok ? 1 : 0;
+            }
+            
+            console.log(`📝 Item ${r.rif_item}: original=${r.rif_ok}, convertido=${rif_ok_final}`);
+            
+            return {
+              ...r,
+              rif_ok: rif_ok_final
+            };
+          })
+        : [];
+
+        console.log('✅ Respostas convertidas finais:', respostasConvertidas);
+
       return {
         manutencao: manutencaoResult[0],
-        respostas: Array.isArray(respostasResult) ? respostasResult : []
+        respostas: respostasConvertidas
       };
     } catch (error) {
       console.error('Erro ao buscar detalhes da manutenção:', error);
       throw error;
     }
   }
+
+  // Verificar se dispositivo já está em manutenção
+  static async verificarDispositivoEmManutencao(dispositivoId: number): Promise<boolean> {
+    try {
+      const query = `
+        SELECT COUNT(*) as count
+        FROM log_manutencao_dispositivo 
+        WHERE lmd_dispositivo = ? AND lmd_status = 1
+      `;
+      
+      const results = await executeQuery(query, [dispositivoId]);
+      const count = Array.isArray(results) && results.length > 0 ? results[0].count : 0;
+      return count > 0;
+    } catch (error) {
+      console.error('Erro ao verificar dispositivo em manutenção:', error);
+      throw error;
+    }
+  }
+
+  // Verificar se usuário já está em atendimento
+  static async verificarUsuarioEmAtendimento(userId: number): Promise<ManutencaoPreventiva | null> {
+    try {
+      const query = `
+        SELECT 
+          lmd.*,
+          d.dis_descricao as dispositivo_descricao,
+          c.col_nome as colaborador_nome,
+          TIMESTAMPDIFF(MINUTE, lmd_data_hora_inicio, NOW()) as duracao_total
+        FROM log_manutencao_dispositivo lmd
+        LEFT JOIN dispositivos d ON lmd.lmd_dispositivo = d.dis_id
+        LEFT JOIN colaboradores c ON lmd.lmd_colaborador = c.col_id
+        WHERE lmd.lmd_colaborador = ? AND lmd.lmd_status  = 1
+        LIMIT 1
+      `;
+      
+      const results = await executeQuery(query, [userId]);
+      return Array.isArray(results) && results.length > 0 ? results[0] : null;
+    } catch (error) {
+      console.error('Erro ao verificar usuário em atendimento:', error);
+      throw error;
+    }
+  }
+
+  // Iniciar manutenção com verificações de concorrência
+  static async iniciarManutencaoSegura(data: {
+    dispositivoId: number;
+    colaboradorId: number;
+    ciclosTotais: number;
+    dataUltimaManutencao: string;
+    tipoIntervalo: string;
+    intervaloDias: number;
+    intervaloPlacas: number;
+    placasExecutadas: number;
+  }): Promise<{ success: boolean; manutencaoId?: number; error?: string }> {
+    const connection = await pool.getConnection();
+    
+    try {
+      await connection.beginTransaction();
+
+      // 1. Verificar se o dispositivo já está em manutenção
+      const dispositivoEmManutencao = await this.verificarDispositivoEmManutencao(data.dispositivoId);
+      if (dispositivoEmManutencao) {
+        await connection.rollback();
+        return {
+          success: false,
+          error: 'Este dispositivo já está em manutenção por outro usuário.'
+        };
+      }
+
+      // 2. Verificar se o usuário já está em atendimento
+      const usuarioEmAtendimento = await this.verificarUsuarioEmAtendimento(data.colaboradorId);
+      if (usuarioEmAtendimento) {
+        await connection.rollback();
+        return {
+          success: false,
+          error: `Você já está atendendo o dispositivo: ${usuarioEmAtendimento.dispositivo_descricao}`
+        };
+      }
+
+      // 3. Inserir nova manutenção (com lock)
+      const insertQuery = `
+        INSERT INTO log_manutencao_dispositivo (
+          lmd_dispositivo,
+          lmd_data_hora_inicio,
+          lmd_tipo_manutencao,
+          lmd_ciclos_totais_executados,
+          lmd_data_hora_ultima_manutencao,
+          lmd_tipo_intervalo_manutencao,
+          lmd_intervalo_dias,
+          lmd_intervalo_placas,
+          lmd_placas_executadas,
+          lmd_colaborador,
+          lmd_status
+        ) VALUES (?, NOW(), 'PREVENTIVA', ?, ?, ?, ?, ?, ?, ?, 1)
+      `;
+
+      const result = await connection.execute(insertQuery, [
+        data.dispositivoId,
+        data.ciclosTotais,
+        data.dataUltimaManutencao,
+        data.tipoIntervalo,
+        data.intervaloDias,
+        data.intervaloPlacas,
+        data.placasExecutadas,
+        data.colaboradorId
+      ]);
+
+      await connection.commit();
+      
+      return {
+        success: true,
+        manutencaoId: (result[0] as ResultSetHeader).insertId
+      };
+
+    } catch (error) {
+      await connection.rollback();
+      console.error('Erro ao iniciar manutenção segura:', error);
+      
+      // Verificar se é erro de duplicação/concorrência
+      if (error instanceof Error && error.message.includes('Duplicate')) {
+        return {
+          success: false,
+          error: 'Este dispositivo já foi selecionado por outro usuário. Tente novamente.'
+        };
+      }
+      
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+
+  // Obter estatísticas de dispositivos
+  static async getEstatisticasDispositivos(): Promise<{
+    total: number;
+    emManutencao: number;
+    necessitamManutencao: number;
+    emDia: number;
+  }> {
+    try {
+      const query = `
+        SELECT 
+          COUNT(*) as total,
+          SUM(CASE WHEN em_manutencao.lmd_id IS NOT NULL THEN 1 ELSE 0 END) as em_manutencao,
+          SUM(CASE WHEN necessita_manutencao THEN 1 ELSE 0 END) as necessitam_manutencao,
+          SUM(CASE WHEN NOT necessita_manutencao AND em_manutencao.lmd_id IS NULL THEN 1 ELSE 0 END) as em_dia
+        FROM (
+          SELECT 
+            d.dis_id,
+            CASE 
+              WHEN COALESCE(dim.dim_tipo_intervalo, 'DIA') = 'DIA' THEN 
+                COALESCE(DATEDIFF(NOW(), dim.dim_data_ultima_manutencao), 9999) >= COALESCE(dim.dim_intervalo_dias, 30)
+              ELSE 
+                COALESCE(dim.dim_placas_executadas, 0) >= COALESCE(dim.dim_intervalo_placas, 1000)
+            END as necessita_manutencao
+          FROM dispositivos d
+          LEFT JOIN dispositivo_info_manutencao dim ON d.dis_info_manutencao = dim.dim_id
+          WHERE d.dis_com_manutencao = 1 AND d.dis_status = 1
+        ) dispositivos_info
+        LEFT JOIN log_manutencao_dispositivo em_manutencao ON dispositivos_info.dis_id = em_manutencao.lmd_dispositivo 
+          AND em_manutencao.lmd_status = 1
+      `;
+      
+      const results = await executeQuery(query);
+      return Array.isArray(results) && results.length > 0 ? results[0] : {
+        total: 0,
+        emManutencao: 0,
+        necessitamManutencao: 0,
+        emDia: 0
+      };
+    } catch (error) {
+      console.error('Erro ao obter estatísticas:', error);
+      throw error;
+    }
+  }
+  
 }
 
 // models/FormularioManutencao.ts
@@ -542,6 +745,43 @@ export class FormularioManutencaoModel {
       throw error;
     } finally {
       connection.release();
+    }
+  }
+}
+
+export class DebugManutencaoModel {
+  static async verificarRespostasSalvas(manutencaoId: number) {
+    try {
+      const query = `
+        SELECT 
+          rif_id,
+          rif_item,
+          rif_log_manutencao,
+          rif_ok,
+          HEX(rif_ok) as rif_ok_hex,
+          CAST(rif_ok AS UNSIGNED) as rif_ok_unsigned,
+          CASE 
+            WHEN rif_ok = 0x01 THEN 'OK (1)'
+            WHEN rif_ok = 0x00 THEN 'NOK (0)'
+            ELSE 'UNKNOWN'
+          END as rif_ok_interpretado,
+          rif_observacao,
+          ifm.ifm_descricao
+        FROM resposta_item_formulario rif
+        LEFT JOIN itens_formulario_manutencao ifm ON rif.rif_item = ifm.ifm_id
+        WHERE rif.rif_log_manutencao = ?
+        ORDER BY ifm.ifm_posicao
+      `;
+      
+      const results = await executeQuery(query, [manutencaoId]);
+      
+      console.log('🔍 DEBUG - Respostas salvas no banco:');
+      console.table(results);
+      
+      return results;
+    } catch (error) {
+      console.error('Erro ao verificar respostas salvas:', error);
+      throw error;
     }
   }
 }

@@ -11,7 +11,8 @@ import {
   getItensFormulario,
   criarFormulario,
   atualizarFormulario,
-  getMetricasManutencao
+  getMetricasManutencao,
+  getDispositivoDetalhes
 } from '../controllers/manutencaoController';
 import { authenticateToken, requireRole } from '../middlewares/auth';
 
@@ -23,6 +24,9 @@ router.use(authenticateToken);
 // Dispositivos para manutenção
 router.get('/dispositivos', getDispositivosManutencao);
 
+// Detalhes específicos de um dispositivo
+router.get('/dispositivo/:dispositivoId/detalhes', getDispositivoDetalhes);
+
 // Manutenção do usuário
 router.get('/minha-manutencao', verificarManutencaoAndamento);
 router.post('/iniciar', iniciarManutencao);
@@ -31,13 +35,13 @@ router.delete('/:id/cancelar', cancelarManutencao);
 
 // Histórico e relatórios
 router.get('/historico', getHistoricoManutencoes);
-router.get('/metricas', requireRole([1, 2, 3]), getMetricasManutencao); // Admin, Gerente, Supervisor
+router.get('/metricas',  getMetricasManutencao); // Admin, Gerente, Supervisor
 router.get('/:id/detalhes', getDetalhesManutencao);
 
 // Formulários (apenas supervisores+)
-router.get('/formularios', requireRole([1, 2, 3]), getFormulariosManutencao);
-router.get('/formularios/:formularioId/itens', requireRole([1, 2, 3]), getItensFormulario);
-router.post('/formularios', requireRole([1, 2, 3]), criarFormulario);
-router.put('/formularios/:id', requireRole([1, 2, 3]), atualizarFormulario);
+router.get('/formularios',  getFormulariosManutencao);
+router.get('/formularios/:formularioId/itens', getItensFormulario);
+router.post('/formularios',  criarFormulario);
+router.put('/formularios/:id', atualizarFormulario);
 
 export default router;

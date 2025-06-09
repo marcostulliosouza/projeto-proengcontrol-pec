@@ -15,6 +15,96 @@ export const getDispositivosManutencao = asyncHandler(async (req: Request, res: 
   } as ApiResponse);
 });
 
+// Buscar detalhes do dispositivo
+export const getDispositivoDetalhes = asyncHandler(async (req: Request, res: Response) => {
+  const dispositivoId = parseInt(req.params.dispositivoId);
+
+  if (isNaN(dispositivoId)) {
+    res.status(400).json({
+      success: false,
+      message: 'ID do dispositivo inválido',
+      timestamp: new Date().toISOString()
+    } as ApiResponse);
+    return;
+  }
+
+  try {
+    const query = `
+      SELECT 
+        d.dis_id,
+        d.dis_descricao,
+        d.dis_codigo_sap,
+        d.dis_com_manutencao,
+        d.dis_info_manutencao,
+        dim.dim_id,
+        dim.dim_tipo_intervalo,
+        dim.dim_intervalo_dias,
+        dim.dim_intervalo_placas,
+        dim.dim_placas_executadas,
+        dim.dim_formulario_manutencao,
+        dim.dim_data_ultima_manutencao,
+        c.cli_nome as cliente_nome,
+        fmp.fmp_descricao as formulario_descricao
+      FROM dispositivos d
+      LEFT JOIN dispositivo_info_manutencao dim ON d.dis_info_manutencao = dim.dim_id
+      LEFT JOIN clientes c ON d.dis_cliente = c.cli_id
+      LEFT JOIN formularios_manutencao_preventiva fmp ON dim.dim_formulario_manutencao = fmp.fmp_id
+      WHERE d.dis_id = ? AND d.dis_status = 1
+    `;
+
+    const { executeQuery } = require('../config/database');
+    const results = await executeQuery(query, [dispositivoId]);
+    
+    if (!Array.isArray(results) || results.length === 0) {
+      res.status(404).json({
+        success: false,
+        message: 'Dispositivo não encontrado ou inativo',
+        timestamp: new Date().toISOString()
+      } as ApiResponse);
+      return;
+    }
+
+    const dispositivo = results[0];
+
+    // Validar se dispositivo tem manutenção ativa
+    if (!dispositivo.dis_com_manutencao) {
+      res.status(400).json({
+        success: false,
+        message: 'Dispositivo não está configurado para manutenção preventiva',
+        timestamp: new Date().toISOString()
+      } as ApiResponse);
+      return;
+    }
+
+    res.json({
+      success: true,
+      message: 'Detalhes do dispositivo obtidos com sucesso',
+      data: {
+        dis_id: dispositivo.dis_id,
+        dis_descricao: dispositivo.dis_descricao,
+        dis_codigo_sap: dispositivo.dis_codigo_sap,
+        cliente_nome: dispositivo.cliente_nome,
+        dim_formulario_manutencao: dispositivo.dim_formulario_manutencao || 1, // Default para formulário básico
+        formulario_descricao: dispositivo.formulario_descricao || 'Formulário Básico',
+        dim_tipo_intervalo: dispositivo.dim_tipo_intervalo,
+        dim_intervalo_dias: dispositivo.dim_intervalo_dias,
+        dim_intervalo_placas: dispositivo.dim_intervalo_placas,
+        dim_placas_executadas: dispositivo.dim_placas_executadas,
+        dim_data_ultima_manutencao: dispositivo.dim_data_ultima_manutencao
+      },
+      timestamp: new Date().toISOString()
+    } as ApiResponse);
+
+  } catch (error) {
+    console.error('Erro ao buscar detalhes do dispositivo:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro interno do servidor ao buscar detalhes do dispositivo',
+      timestamp: new Date().toISOString()
+    } as ApiResponse);
+  }
+});
+
 // Verificar manutenção em andamento para usuário
 export const verificarManutencaoAndamento = asyncHandler(async (req: AuthRequest, res: Response) => {
   const userId = req.user?.id;
@@ -71,35 +161,55 @@ export const iniciarManutencao = asyncHandler(async (req: AuthRequest, res: Resp
     return;
   }
 
-  // Verificar se usuário já tem manutenção em andamento
-  const manutencaoExistente = await ManutencaoPreventivaModel.verificarManutencaoAndamento(userId);
-  if (manutencaoExistente) {
-    res.status(400).json({
-      success: false,
-      message: `Você já tem uma manutenção em andamento para o dispositivo ${manutencaoExistente.dispositivo_descricao}`,
+  try {
+    const result = await ManutencaoPreventivaModel.iniciarManutencaoSegura({
+      dispositivoId,
+      colaboradorId: userId,
+      ciclosTotais: ciclosTotais || 0,
+      dataUltimaManutencao: dataUltimaManutencao || null,
+      tipoIntervalo: tipoIntervalo || 'DIA',
+      intervaloDias: intervaloDias || 0,
+      intervaloPlacas: intervaloPlacas || 0,
+      placasExecutadas: placasExecutadas || 0
+    });
+
+    if (!result.success) {
+      res.status(409).json({
+        success: false,
+        message: result.error,
+        timestamp: new Date().toISOString()
+      } as ApiResponse);
+      return;
+    }
+
+    // Emitir evento via WebSocket para atualizar outros usuários
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('manutencao_iniciada', {
+        dispositivoId,
+        manutencaoId: result.manutencaoId,
+        colaboradorId: userId,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Manutenção iniciada com sucesso',
+      data: { id: result.manutencaoId },
       timestamp: new Date().toISOString()
     } as ApiResponse);
-    return;
+
+  } catch (error) {
+    console.error('Erro ao iniciar manutenção:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro interno do servidor',
+      timestamp: new Date().toISOString()
+    } as ApiResponse);
   }
-
-  const manutencaoId = await ManutencaoPreventivaModel.iniciarManutencao({
-    dispositivoId,
-    colaboradorId: userId,
-    ciclosTotais: ciclosTotais || 0,
-    dataUltimaManutencao: dataUltimaManutencao || null,
-    tipoIntervalo: tipoIntervalo || 'DIA',
-    intervaloDias: intervaloDias || 0,
-    intervaloPlacas: intervaloPlacas || 0,
-    placasExecutadas: placasExecutadas || 0
-  });
-
-  res.status(201).json({
-    success: true,
-    message: 'Manutenção iniciada com sucesso',
-    data: { id: manutencaoId },
-    timestamp: new Date().toISOString()
-  } as ApiResponse);
 });
+
 
 // Finalizar manutenção
 export const finalizarManutencao = asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -142,6 +252,18 @@ export const finalizarManutencao = asyncHandler(async (req: AuthRequest, res: Re
   res.json({
     success: true,
     message: 'Manutenção finalizada com sucesso',
+    timestamp: new Date().toISOString()
+  } as ApiResponse);
+});
+
+// Endpoint para verificar status de dispositivos
+export const getStatusDispositivos = asyncHandler(async (req: Request, res: Response) => {
+  const estatisticas = await ManutencaoPreventivaModel.getEstatisticasDispositivos();
+  
+  res.json({
+    success: true,
+    message: 'Estatísticas obtidas com sucesso',
+    data: estatisticas,
     timestamp: new Date().toISOString()
   } as ApiResponse);
 });
