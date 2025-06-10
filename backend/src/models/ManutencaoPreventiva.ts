@@ -96,33 +96,40 @@ export class ManutencaoPreventivaModel {
       // `;
       
       const query = `
-      SELECT 
-        d.dis_id,
-        d.dis_descricao,
-        d.dis_com_manutencao,
-        d.dis_info_manutencao,
-        COALESCE(dim.dim_tipo_intervalo, 'DIA') as dim_tipo_intervalo,
-        COALESCE(dim.dim_intervalo_dias, 30) as dim_intervalo_dias,
-        COALESCE(dim.dim_intervalo_placas, 1000) as dim_intervalo_placas,
-        COALESCE(dim.dim_placas_executadas, 0) as dim_placas_executadas,
-        dim.dim_data_ultima_manutencao,
-        CASE 
-          WHEN COALESCE(dim.dim_tipo_intervalo, 'DIA') = 'DIA' THEN 
-            COALESCE(DATEDIFF(NOW(), dim.dim_data_ultima_manutencao), 9999)
-          ELSE 
-            COALESCE(dim.dim_placas_executadas, 0)
-        END as dias_desde_ultima,
-        CASE 
-          WHEN COALESCE(dim.dim_tipo_intervalo, 'DIA') = 'DIA' THEN 
-            COALESCE(DATEDIFF(NOW(), dim.dim_data_ultima_manutencao), 9999) >= COALESCE(dim.dim_intervalo_dias, 30)
-          ELSE 
-            COALESCE(dim.dim_placas_executadas, 0) >= COALESCE(dim.dim_intervalo_placas, 1000)
-        END as necessita_manutencao
-      FROM dispositivos d
-      LEFT JOIN dispositivo_info_manutencao dim ON d.dis_info_manutencao = dim.dim_id
-      WHERE d.dis_com_manutencao = 1 
-      AND d.dis_status = 1
-      ORDER BY necessita_manutencao DESC, dias_desde_ultima DESC
+        SELECT 
+          d.dis_id,
+          d.dis_descricao,
+          d.dis_com_manutencao,
+          d.dis_info_manutencao,
+          COALESCE(dim.dim_tipo_intervalo, 'DIA') as dim_tipo_intervalo,
+          COALESCE(dim.dim_intervalo_dias, 30) as dim_intervalo_dias,
+          COALESCE(dim.dim_intervalo_placas, 1000) as dim_intervalo_placas,
+          COALESCE(dim.dim_placas_executadas, 0) as dim_placas_executadas,
+          dim.dim_data_ultima_manutencao,
+          CASE 
+            WHEN COALESCE(dim.dim_tipo_intervalo, 'DIA') = 'DIA' THEN 
+              COALESCE(DATEDIFF(NOW(), dim.dim_data_ultima_manutencao), 9999)
+            ELSE 
+              COALESCE(dim.dim_placas_executadas, 0)
+          END as dias_desde_ultima,
+          CASE 
+            WHEN COALESCE(dim.dim_tipo_intervalo, 'DIA') = 'DIA' THEN 
+              COALESCE(DATEDIFF(NOW(), dim.dim_data_ultima_manutencao), 9999) >= COALESCE(dim.dim_intervalo_dias, 30)
+            ELSE 
+              COALESCE(dim.dim_placas_executadas, 0) >= COALESCE(dim.dim_intervalo_placas, 1000)
+          END as necessita_manutencao,
+          -- Cálculo da porcentagem de uso/manutenção
+          CASE 
+            WHEN COALESCE(dim.dim_tipo_intervalo, 'DIA') = 'DIA' THEN 
+              ROUND((COALESCE(DATEDIFF(NOW(), dim.dim_data_ultima_manutencao), 0) / COALESCE(dim.dim_intervalo_dias, 30)) * 100, 2)
+            ELSE 
+              ROUND((COALESCE(dim.dim_placas_executadas, 0) / COALESCE(dim.dim_intervalo_placas, 1000)) * 100, 2)
+          END as percentual_manutencao
+        FROM dispositivos d
+        LEFT JOIN dispositivo_info_manutencao dim ON d.dis_info_manutencao = dim.dim_id
+        WHERE d.dis_com_manutencao = 1 
+        AND d.dis_status = 1
+        ORDER BY necessita_manutencao DESC, percentual_manutencao DESC
     `;
 
       const results = await executeQuery(query);

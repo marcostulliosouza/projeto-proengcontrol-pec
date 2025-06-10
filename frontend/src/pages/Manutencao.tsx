@@ -91,6 +91,17 @@ const Manutencao: React.FC = () => {
     loadData(); // Recarregar dados
   };
 
+  // Percentual para manutenção
+  const getPercentualManutencao = (percentual: number) => {
+    if (percentual <= 70) {
+      return 'bg-green-500';
+    } else if (percentual <= 90) {
+      return 'bg-yellow-500';
+    } else {
+      return 'bg-red-500 animate-pulse';
+    }
+  };
+
   const formatDaysInterval = (dispositivo: DispositivoManutencao) => {
     if (dispositivo.dim_tipo_intervalo === 'DIA') {
       const diasRestantes = dispositivo.dim_intervalo_dias - dispositivo.dias_desde_ultima;
@@ -123,11 +134,22 @@ const Manutencao: React.FC = () => {
         return (
           <div className="flex items-center justify-center">
             <div className={`w-3 h-3 rounded-full ${
-              dispositivo.necessita_manutencao ? 'bg-red-500 animate-pulse' : 'bg-green-500'
+              getPercentualManutencao(dispositivo.percentual_manutencao)
             }`} title={dispositivo.necessita_manutencao ? 'Manutenção necessária' : 'Em dia'} />
           </div>
         );
       }
+    },
+    {
+      key: 'dis_id',
+      label: 'DT',
+      render: (value: unknown) => {
+        const strValor = String(value || '');
+        const formatValor = strValor.padStart(6, '0');
+        return(
+          <span className="font-medium text-gray-900">{formatValor}</span>
+        );
+      },
     },
     {
       key: 'dis_descricao',

@@ -25,6 +25,7 @@ export interface DispositivoManutencao {
   dim_data_ultima_manutencao: string | null;
   dias_desde_ultima: number;
   necessita_manutencao: boolean;
+  percentual_manutencao: number;
 }
 
 export interface ManutencaoPreventiva {
