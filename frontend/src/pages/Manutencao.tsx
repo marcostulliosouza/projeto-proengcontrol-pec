@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useState, useEffect } from 'react';
 import { Card, Button, Table } from '../components/ui';
 import Pagination from '../components/ui/Pagination';
@@ -17,6 +18,12 @@ const Manutencao: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [showIniciarModal, setShowIniciarModal] = useState(false);
   const [dispositivoSelecionado, setDispositivoSelecionado] = useState<DispositivoManutencao | null>(null);
+  
+  // Estados de filtros e busca
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'todos' | 'necessita' | 'em_dia' | 'atencao'>('todos');
+  const [tipoFilter, setTipoFilter] = useState<'todos' | 'DIA' | 'PLACA'>('todos');
+  const [showFilters, setShowFilters] = useState(false);
 
   // Estado da paginação para dispositivos
   const [paginationDispositivos, setPaginationDispositivos] = useState<PaginationInfo>({
@@ -38,11 +45,53 @@ const Manutencao: React.FC = () => {
   useEffect(() => {
     setPaginationDispositivos(prev => ({
       ...prev,
-      totalItems: dispositivos.length,
-      totalPages: Math.ceil(dispositivos.length / prev.itemsPerPage),
+      totalItems: dispositivosFiltrados.length,
+      totalPages: Math.ceil(dispositivosFiltrados.length / prev.itemsPerPage),
       currentPage: 1 // Reset para primeira página quando dados mudarem
     }));
-  }, [dispositivos]);
+  }, [dispositivos, searchTerm, statusFilter, tipoFilter]);
+
+  // Função para filtrar dispositivos
+  const dispositivosFiltrados = dispositivos.filter(dispositivo => {
+    // Filtro de busca (DT ou descrição)
+    const searchMatch = searchTerm === '' || 
+      dispositivo.dis_id.toString().padStart(6, '0').includes(searchTerm) ||
+      dispositivo.dis_descricao.toLowerCase().includes(searchTerm.toLowerCase());
+
+    // Filtro de status
+    let statusMatch = true;
+    if (statusFilter === 'necessita') {
+      statusMatch = dispositivo.necessita_manutencao;
+    } else if (statusFilter === 'em_dia') {
+      const percent = typeof dispositivo.percentual_manutencao === 'string' 
+        ? parseFloat(dispositivo.percentual_manutencao) 
+        : dispositivo.percentual_manutencao;
+      statusMatch = !dispositivo.necessita_manutencao && percent <= 70;
+    } else if (statusFilter === 'atencao') {
+      const percent = typeof dispositivo.percentual_manutencao === 'string' 
+        ? parseFloat(dispositivo.percentual_manutencao) 
+        : dispositivo.percentual_manutencao;
+      statusMatch = !dispositivo.necessita_manutencao && percent > 70 && percent <= 90;
+    }
+
+    // Filtro de tipo
+    const tipoMatch = tipoFilter === 'todos' || dispositivo.dim_tipo_intervalo === tipoFilter;
+
+    return searchMatch && statusMatch && tipoMatch;
+  });
+
+  // Limpar filtros
+  const clearFilters = () => {
+    setSearchTerm('');
+    setStatusFilter('todos');
+    setTipoFilter('todos');
+    setPaginationDispositivos(prev => ({ ...prev, currentPage: 1 }));
+  };
+
+  // Verificar se há filtros ativos
+  const hasActiveFilters = () => {
+    return searchTerm !== '' || statusFilter !== 'todos' || tipoFilter !== 'todos';
+  };
 
   const loadData = async () => {
     try {
@@ -90,13 +139,18 @@ const Manutencao: React.FC = () => {
   };
 
   // Percentual para manutenção
-  const getPercentualManutencao = (percentual: number) => {
-    if (percentual <= 70) {
-      return 'bg-green-500';
-    } else if (percentual <= 90) {
-      return 'bg-yellow-500';
+  const getPercentualManutencao = (percentual: number | string) => {
+    console.log('🎨 Calculando cor para percentual:', percentual);
+    
+    // Converter string para number se necessário
+    const percent = typeof percentual === 'string' ? parseFloat(percentual) : percentual;
+    
+    if (percent <= 70) {
+      return 'bg-green-500'; // Verde: 0-70%
+    } else if (percent <= 90) {
+      return 'bg-yellow-500'; // Amarelo: 71-90%
     } else {
-      return 'bg-red-500 animate-pulse';
+      return 'bg-red-500 animate-pulse'; // Vermelho piscando: >90%
     }
   };
 
@@ -116,8 +170,8 @@ const Manutencao: React.FC = () => {
     }
   };
 
-  // Paginação local para dispositivos
-  const dispositivosPaginados = dispositivos.slice(
+  // Paginação local para dispositivos filtrados
+  const dispositivosPaginados = dispositivosFiltrados.slice(
     (paginationDispositivos.currentPage - 1) * paginationDispositivos.itemsPerPage,
     paginationDispositivos.currentPage * paginationDispositivos.itemsPerPage
   );
@@ -129,11 +183,20 @@ const Manutencao: React.FC = () => {
       className: 'w-24',
       render: (_: unknown, item: Record<string, unknown>) => {
         const dispositivo = item as unknown as DispositivoManutencao;
+        const percent = typeof dispositivo.percentual_manutencao === 'string' 
+          ? parseFloat(dispositivo.percentual_manutencao) 
+          : dispositivo.percentual_manutencao;
+        
         return (
           <div className="flex items-center justify-center">
-            <div className={`w-3 h-3 rounded-full ${
-              getPercentualManutencao(dispositivo.percentual_manutencao)
-            }`} title={dispositivo.necessita_manutencao ? 'Manutenção necessária' : 'Em dia'} />
+            <div 
+              className={`w-4 h-4 rounded-full ${getPercentualManutencao(percent)}`} 
+              title={`${percent.toFixed(1)}% - ${
+                percent <= 70 ? 'Em dia' : 
+                percent <= 90 ? 'Atenção' : 
+                'Manutenção necessária'
+              }`} 
+            />
           </div>
         );
       }
@@ -191,6 +254,25 @@ const Manutencao: React.FC = () => {
       render: (_: unknown, item: Record<string, unknown>) => {
         const dispositivo = item as unknown as DispositivoManutencao;
         return formatDaysInterval(dispositivo);
+      }
+    },
+    {
+      key: 'percentual_manutencao',
+      label: 'Percentual',
+      className: 'w-24',
+      render: (value: unknown) => {
+        const percent = typeof value === 'string' ? parseFloat(value) : Number(value);
+        return (
+          <div className="text-center">
+            <span className={`text-sm font-bold ${
+              percent <= 70 ? 'text-green-600' : 
+              percent <= 90 ? 'text-yellow-600' : 
+              'text-red-600'
+            }`}>
+              {percent.toFixed(1)}%
+            </span>
+          </div>
+        );
       }
     },
     {
@@ -295,78 +377,79 @@ const Manutencao: React.FC = () => {
         />
       )}
 
-      {/* Cards de Estatísticas Principais */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <Card className="bg-gradient-to-br from-red-500 to-red-600 text-white transform hover:scale-105 transition-transform shadow-lg">
-          <div className="flex items-center justify-between p-6">
-            <div>
-              <p className="text-red-100 text-sm font-medium">Manutenção Necessária</p>
-              <p className="text-3xl font-bold mb-1">
-                {dispositivos.filter(d => d.necessita_manutencao).length}
-              </p>
-              <p className="text-red-200 text-xs">
-                {((dispositivos.filter(d => d.necessita_manutencao).length / Math.max(dispositivos.length, 1)) * 100).toFixed(1)}% do total
-              </p>
-            </div>
-            <div className="w-16 h-16 bg-red-400 bg-opacity-30 rounded-full flex items-center justify-center text-2xl">
-              🚨
-            </div>
-          </div>
-        </Card>
-        
-        <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white transform hover:scale-105 transition-transform shadow-lg">
-          <div className="flex items-center justify-between p-6">
-            <div>
-              <p className="text-green-100 text-sm font-medium">Em Dia</p>
-              <p className="text-3xl font-bold mb-1">
-                {dispositivos.filter(d => !d.necessita_manutencao).length}
-              </p>
-              <p className="text-green-200 text-xs">
-                {((dispositivos.filter(d => !d.necessita_manutencao).length / Math.max(dispositivos.length, 1)) * 100).toFixed(1)}% do total
-              </p>
-            </div>
-            <div className="w-16 h-16 bg-green-400 bg-opacity-30 rounded-full flex items-center justify-center text-2xl">
-              ✅
-            </div>
-          </div>
-        </Card>
-        
-        <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white transform hover:scale-105 transition-transform shadow-lg">
-          <div className="flex items-center justify-between p-6">
-            <div>
-              <p className="text-blue-100 text-sm font-medium">Total de Dispositivos</p>
-              <p className="text-3xl font-bold mb-1">{dispositivos.length}</p>
-              <p className="text-blue-200 text-xs">
-                Configurados para manutenção
-              </p>
-            </div>
-            <div className="w-16 h-16 bg-blue-400 bg-opacity-30 rounded-full flex items-center justify-center text-2xl">
-              📋
-            </div>
-          </div>
-        </Card>
+       {/* Cards de Estatísticas Principais */}
+       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+       <Card className="bg-gradient-to-br from-red-500 to-red-600 text-white transform hover:scale-105 transition-transform shadow-lg">
+         <div className="flex items-center justify-between p-6">
+           <div>
+             <p className="text-red-100 text-sm font-medium">Manutenção Necessária</p>
+             <p className="text-3xl font-bold mb-1">
+               {dispositivos.filter(d => d.necessita_manutencao).length}
+             </p>
+             <p className="text-red-200 text-xs">
+               {((dispositivos.filter(d => d.necessita_manutencao).length / Math.max(dispositivos.length, 1)) * 100).toFixed(1)}% do total
+             </p>
+           </div>
+           <div className="w-16 h-16 bg-red-400 bg-opacity-30 rounded-full flex items-center justify-center text-2xl">
+             🚨
+           </div>
+         </div>
+       </Card>
+       
+       <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white transform hover:scale-105 transition-transform shadow-lg">
+         <div className="flex items-center justify-between p-6">
+           <div>
+             <p className="text-green-100 text-sm font-medium">Em Dia</p>
+             <p className="text-3xl font-bold mb-1">
+               {dispositivos.filter(d => !d.necessita_manutencao).length}
+             </p>
+             <p className="text-green-200 text-xs">
+               {((dispositivos.filter(d => !d.necessita_manutencao).length / Math.max(dispositivos.length, 1)) * 100).toFixed(1)}% do total
+             </p>
+           </div>
+           <div className="w-16 h-16 bg-green-400 bg-opacity-30 rounded-full flex items-center justify-center text-2xl">
+             ✅
+           </div>
+         </div>
+       </Card>
+       
+       <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white transform hover:scale-105 transition-transform shadow-lg">
+         <div className="flex items-center justify-between p-6">
+           <div>
+             <p className="text-blue-100 text-sm font-medium">Total de Dispositivos</p>
+             <p className="text-3xl font-bold mb-1">{dispositivos.length}</p>
+             <p className="text-blue-200 text-xs">
+               Configurados para manutenção
+             </p>
+           </div>
+           <div className="w-16 h-16 bg-blue-400 bg-opacity-30 rounded-full flex items-center justify-center text-2xl">
+             📋
+           </div>
+         </div>
+       </Card>
 
-        <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white transform hover:scale-105 transition-transform shadow-lg">
-          <div className="flex items-center justify-between p-6">
-            <div>
-              <p className="text-purple-100 text-sm font-medium">Taxa de Conformidade</p>
-              <p className="text-3xl font-bold mb-1">
-                {dispositivos.length > 0 
-                  ? Math.round(((dispositivos.filter(d => !d.necessita_manutencao).length / dispositivos.length) * 100))
-                  : 0
-                }%
-              </p>
-              <p className="text-purple-200 text-xs">
-                Dispositivos em dia
-              </p>
-            </div>
-            <div className="w-16 h-16 bg-purple-400 bg-opacity-30 rounded-full flex items-center justify-center text-2xl">
-              📊
-            </div>
-          </div>
-        </Card>
-      </div>
+       <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white transform hover:scale-105 transition-transform shadow-lg">
+         <div className="flex items-center justify-between p-6">
+           <div>
+             <p className="text-purple-100 text-sm font-medium">Taxa de Conformidade</p>
+             <p className="text-3xl font-bold mb-1">
+               {dispositivos.length > 0 
+                 ? Math.round(((dispositivos.filter(d => !d.necessita_manutencao).length / dispositivos.length) * 100))
+                 : 0
+               }%
+             </p>
+             <p className="text-purple-200 text-xs">
+               Dispositivos em dia
+             </p>
+           </div>
+           <div className="w-16 h-16 bg-purple-400 bg-opacity-30 rounded-full flex items-center justify-center text-2xl">
+             📊
+           </div>
+         </div>
+       </Card>
+     </div>
 
+      
       {/* Navegação por Tabs Modernizada */}
       <Card className="overflow-hidden">
         <div className="bg-gray-50 px-6 py-4 border-b">
@@ -436,29 +519,184 @@ const Manutencao: React.FC = () => {
                     Gerencie as manutenções preventivas dos seus dispositivos
                   </p>
                 </div>
-                <Button
-                  variant="primary"
-                  onClick={loadData}
-                  disabled={loading}
-                  className="flex items-center space-x-2 shadow-lg"
-                >
-                  <span>{loading ? '⏳' : '🔄'}</span>
-                  <span>Atualizar Lista</span>
-                </Button>
+                <div className="flex items-center space-x-3">
+                  <Button
+                    variant="secondary"
+                    onClick={() => setShowFilters(!showFilters)}
+                    className={`flex items-center space-x-2 ${hasActiveFilters() ? 'bg-blue-50 text-blue-600 border-blue-300' : ''}`}
+                  >
+                    <span>🔍</span>
+                    <span>{showFilters ? 'Ocultar' : 'Filtros'}</span>
+                    {hasActiveFilters() && (
+                      <span className="bg-blue-500 text-white rounded-full px-2 py-0.5 text-xs font-bold">
+                        {[searchTerm, statusFilter !== 'todos', tipoFilter !== 'todos'].filter(Boolean).length}
+                      </span>
+                    )}
+                  </Button>
+                  <Button
+                    variant="primary"
+                    onClick={loadData}
+                    disabled={loading}
+                    className="flex items-center space-x-2 shadow-lg"
+                  >
+                    <span>{loading ? '⏳' : '🔄'}</span>
+                    <span>Atualizar</span>
+                  </Button>
+                </div>
               </div>
 
-              {/* Informações de Paginação Modernizada */}
+              {/* Painel de Filtros */}
+              {showFilters && (
+                <Card className="bg-gradient-to-r from-gray-50 to-blue-50 border border-blue-200">
+                  <div className="p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+                        <span className="mr-2">🔍</span>
+                        Filtros e Busca
+                      </h3>
+                      {hasActiveFilters() && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={clearFilters}
+                          className="text-red-600 hover:bg-red-50"
+                        >
+                          🗑️ Limpar Filtros
+                        </Button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {/* Busca por DT ou Descrição */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Buscar por DT ou Descrição
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Digite o DT (ex: 292) ou descrição do dispositivo..."
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                        {searchTerm && (
+                          <p className="text-xs text-gray-500 mt-1">
+                            {dispositivosFiltrados.length} dispositivo{dispositivosFiltrados.length !== 1 ? 's' : ''} encontrado{dispositivosFiltrados.length !== 1 ? 's' : ''}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Filtro por Status */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                           Status da Manutenção
+                        </label>
+                        <select
+                          value={statusFilter}
+                          onChange={(e) => setStatusFilter(e.target.value as any)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                          <option value="todos">Todos os Status</option>
+                          <option value="necessita">🔴 Manutenção Necessária</option>
+                          <option value="atencao">🟡 Atenção (71-90%)</option>
+                          <option value="em_dia">🟢 Em Dia (≤70%)</option>
+                        </select>
+                      </div>
+
+                      {/* Filtro por Tipo */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Tipo de Intervalo
+                        </label>
+                        <select
+                          value={tipoFilter}
+                          onChange={(e) => setTipoFilter(e.target.value as any)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                          <option value="todos">Todos os Tipos</option>
+                          <option value="DIA">📅 Por Dias</option>
+                          <option value="PLACA">🔢 Por Placas</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Filtros Rápidos */}
+                    <div className="mt-4 pt-4 border-t border-gray-200">
+                      <p className="text-sm font-medium text-gray-700 mb-2">Filtros Rápidos:</p>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => {
+                            setStatusFilter('necessita');
+                            setSearchTerm('');
+                            setTipoFilter('todos');
+                          }}
+                          className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm hover:bg-red-200 transition-colors"
+                        >
+                          🔴 Só Necessárias
+                        </button>
+                        <button
+                          onClick={() => {
+                            setStatusFilter('atencao');
+                            setSearchTerm('');
+                            setTipoFilter('todos');
+                          }}
+                          className="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-sm hover:bg-yellow-200 transition-colors"
+                        >
+                          🟡 Só Atenção
+                        </button>
+                        <button
+                          onClick={() => {
+                            setTipoFilter('DIA');
+                            setStatusFilter('todos');
+                            setSearchTerm('');
+                          }}
+                          className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm hover:bg-blue-200 transition-colors"
+                        >
+                          📅 Só por Dias
+                        </button>
+                        <button
+                          onClick={() => {
+                            setTipoFilter('PLACA');
+                            setStatusFilter('todos');
+                            setSearchTerm('');
+                          }}
+                          className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm hover:bg-purple-200 transition-colors"
+                        >
+                          🔢 Só por Placas
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+              )}
+
+              {/* Informações de Resultados */}
               <div className="bg-gray-50 rounded-lg p-4">
                 <div className="flex items-center justify-between text-sm">
                   <div className="flex items-center space-x-4">
                     <div className="text-gray-700">
-                      Mostrando <span className="font-bold text-gray-900">
-                        {((paginationDispositivos.currentPage - 1) * paginationDispositivos.itemsPerPage) + 1}
-                      </span> - <span className="font-bold text-gray-900">
-                        {Math.min(paginationDispositivos.currentPage * paginationDispositivos.itemsPerPage, paginationDispositivos.totalItems)}
-                      </span> de <span className="font-bold text-gray-900">
-                        {paginationDispositivos.totalItems}
-                      </span> dispositivos
+                      {hasActiveFilters() ? (
+                        <>
+                          Mostrando <span className="font-bold text-blue-600">
+                            {((paginationDispositivos.currentPage - 1) * paginationDispositivos.itemsPerPage) + 1}
+                          </span> - <span className="font-bold text-blue-600">
+                            {Math.min(paginationDispositivos.currentPage * paginationDispositivos.itemsPerPage, paginationDispositivos.totalItems)}
+                          </span> de <span className="font-bold text-blue-600">
+                            {paginationDispositivos.totalItems}
+                          </span> dispositivos filtrados
+                          <span className="text-gray-500 ml-1">(de {dispositivos.length} total)</span>
+                        </>
+                      ) : (
+                        <>
+                          Mostrando <span className="font-bold text-gray-900">
+                            {((paginationDispositivos.currentPage - 1) * paginationDispositivos.itemsPerPage) + 1}
+                          </span> - <span className="font-bold text-gray-900">
+                            {Math.min(paginationDispositivos.currentPage * paginationDispositivos.itemsPerPage, paginationDispositivos.totalItems)}
+                          </span> de <span className="font-bold text-gray-900">
+                            {paginationDispositivos.totalItems}
+                          </span> dispositivos
+                        </>
+                      )}
                     </div>
                   </div>
                   
@@ -488,7 +726,11 @@ const Manutencao: React.FC = () => {
                   columns={columnsDispositivos}
                   data={dispositivosPaginados as unknown as Record<string, unknown>[]}
                   loading={loading}
-                  emptyMessage="Nenhum dispositivo com manutenção configurada"
+                  emptyMessage={
+                    hasActiveFilters() 
+                      ? "Nenhum dispositivo encontrado com os filtros aplicados. Tente ajustar os critérios de busca." 
+                      : "Nenhum dispositivo com manutenção configurada"
+                  }
                 />
 
                 {/* Paginação Modernizada */}
@@ -501,6 +743,43 @@ const Manutencao: React.FC = () => {
                   </div>
                 )}
               </div>
+
+              {/* Resumo dos Filtros Aplicados */}
+              {hasActiveFilters() && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-blue-600 font-medium">🔍 Filtros ativos:</span>
+                      <div className="flex flex-wrap gap-2">
+                        {searchTerm && (
+                          <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-medium">
+                            Busca: "{searchTerm}"
+                          </span>
+                        )}
+                        {statusFilter !== 'todos' && (
+                          <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-medium">
+                            Status: {statusFilter === 'necessita' ? '🔴 Necessária' : 
+                                    statusFilter === 'atencao' ? '🟡 Atenção' : '🟢 Em Dia'}
+                          </span>
+                        )}
+                        {tipoFilter !== 'todos' && (
+                          <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-medium">
+                            Tipo: {tipoFilter === 'DIA' ? '📅 Por Dias' : '🔢 Por Placas'}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={clearFilters}
+                      className="text-blue-600 hover:bg-blue-100"
+                    >
+                      Limpar todos
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
