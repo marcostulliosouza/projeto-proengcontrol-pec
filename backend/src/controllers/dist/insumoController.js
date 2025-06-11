@@ -37,7 +37,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
 };
 exports.__esModule = true;
 exports.getInsumosAutocomplete = exports.getEstatisticas = exports.getCategorias = exports.getEstoqueBaixo = exports.getHistoricoMovimentacoes = exports.movimentarEstoque = exports.deleteInsumo = exports.updateInsumo = exports.createInsumo = exports.getInsumo = exports.getInsumos = void 0;
-var Insumo_1 = require("../models/Insumo");
+var Insumos_1 = require("../models/Insumos");
 var errorHandler_1 = require("../middlewares/errorHandler");
 // Listar insumos
 exports.getInsumos = errorHandler_1.asyncHandler(function (req, res) { return __awaiter(void 0, void 0, void 0, function () {
@@ -55,7 +55,7 @@ exports.getInsumos = errorHandler_1.asyncHandler(function (req, res) { return __
                     page: page,
                     limit: limit
                 };
-                return [4 /*yield*/, Insumo_1.InsumoModel.findAll(filtros)];
+                return [4 /*yield*/, Insumos_1.InsumoModel.findAll(filtros)];
             case 1:
                 _a = _b.sent(), insumos = _a.insumos, total = _a.total;
                 totalPages = Math.ceil(total / limit);
@@ -94,7 +94,7 @@ exports.getInsumo = errorHandler_1.asyncHandler(function (req, res) { return __a
                     });
                     return [2 /*return*/];
                 }
-                return [4 /*yield*/, Insumo_1.InsumoModel.findById(id)];
+                return [4 /*yield*/, Insumos_1.InsumoModel.findById(id)];
             case 1:
                 insumo = _a.sent();
                 if (!insumo) {
@@ -154,11 +154,11 @@ exports.createInsumo = errorHandler_1.asyncHandler(function (req, res) { return 
                 _c.label = 1;
             case 1:
                 _c.trys.push([1, 5, , 6]);
-                return [4 /*yield*/, Insumo_1.InsumoModel.create(insumoData)];
+                return [4 /*yield*/, Insumos_1.InsumoModel.create(insumoData)];
             case 2:
                 insumoId = _c.sent();
                 if (!(insumoData.ins_qtd > 0)) return [3 /*break*/, 4];
-                return [4 /*yield*/, Insumo_1.InsumoModel.movimentarEstoque({
+                return [4 /*yield*/, Insumos_1.InsumoModel.movimentarEstoque({
                         ins_id: insumoId,
                         mov_tipo: 'ENTRADA',
                         mov_quantidade: insumoData.ins_qtd,
@@ -232,7 +232,7 @@ exports.updateInsumo = errorHandler_1.asyncHandler(function (req, res) { return 
                     ins_localizacao: (ins_localizacao === null || ins_localizacao === void 0 ? void 0 : ins_localizacao.trim()) || null,
                     ins_observacoes: (ins_observacoes === null || ins_observacoes === void 0 ? void 0 : ins_observacoes.trim()) || null
                 };
-                return [4 /*yield*/, Insumo_1.InsumoModel.update(id, insumoData)];
+                return [4 /*yield*/, Insumos_1.InsumoModel.update(id, insumoData)];
             case 1:
                 updated = _b.sent();
                 if (!updated) {
@@ -267,7 +267,7 @@ exports.deleteInsumo = errorHandler_1.asyncHandler(function (req, res) { return 
                     });
                     return [2 /*return*/];
                 }
-                return [4 /*yield*/, Insumo_1.InsumoModel["delete"](id)];
+                return [4 /*yield*/, Insumos_1.InsumoModel["delete"](id)];
             case 1:
                 deleted = _a.sent();
                 if (!deleted) {
@@ -324,7 +324,7 @@ exports.movimentarEstoque = errorHandler_1.asyncHandler(function (req, res) { re
                 _c.label = 1;
             case 1:
                 _c.trys.push([1, 3, , 4]);
-                return [4 /*yield*/, Insumo_1.InsumoModel.movimentarEstoque({
+                return [4 /*yield*/, Insumos_1.InsumoModel.movimentarEstoque({
                         ins_id: id,
                         mov_tipo: mov_tipo,
                         mov_quantidade: parseInt(mov_quantidade),
@@ -371,7 +371,7 @@ exports.getHistoricoMovimentacoes = errorHandler_1.asyncHandler(function (req, r
                     page: page,
                     limit: limit
                 };
-                return [4 /*yield*/, Insumo_1.InsumoModel.getHistoricoMovimentacoes(isNaN(id) ? undefined : id, filtros)];
+                return [4 /*yield*/, Insumos_1.InsumoModel.getHistoricoMovimentacoes(isNaN(id) ? undefined : id, filtros)];
             case 1:
                 _a = _b.sent(), movimentacoes = _a.movimentacoes, total = _a.total;
                 totalPages = Math.ceil(total / limit);
@@ -400,7 +400,7 @@ exports.getEstoqueBaixo = errorHandler_1.asyncHandler(function (req, res) { retu
     var insumos;
     return __generator(this, function (_a) {
         switch (_a.label) {
-            case 0: return [4 /*yield*/, Insumo_1.InsumoModel.getEstoqueBaixo()];
+            case 0: return [4 /*yield*/, Insumos_1.InsumoModel.getEstoqueBaixo()];
             case 1:
                 insumos = _a.sent();
                 res.json({
@@ -418,7 +418,7 @@ exports.getCategorias = errorHandler_1.asyncHandler(function (req, res) { return
     var categorias;
     return __generator(this, function (_a) {
         switch (_a.label) {
-            case 0: return [4 /*yield*/, Insumo_1.InsumoModel.getCategorias()];
+            case 0: return [4 /*yield*/, Insumos_1.InsumoModel.getCategorias()];
             case 1:
                 categorias = _a.sent();
                 res.json({
@@ -436,7 +436,7 @@ exports.getEstatisticas = errorHandler_1.asyncHandler(function (req, res) { retu
     var estatisticas;
     return __generator(this, function (_a) {
         switch (_a.label) {
-            case 0: return [4 /*yield*/, Insumo_1.InsumoModel.getEstatisticas()];
+            case 0: return [4 /*yield*/, Insumos_1.InsumoModel.getEstatisticas()];
             case 1:
                 estatisticas = _a.sent();
                 res.json({
@@ -464,7 +464,7 @@ exports.getInsumosAutocomplete = errorHandler_1.asyncHandler(function (req, res)
                     });
                     return [2 /*return*/];
                 }
-                return [4 /*yield*/, Insumo_1.InsumoModel.findAll({
+                return [4 /*yield*/, Insumos_1.InsumoModel.findAll({
                         search: search,
                         limit: 10
                     })];

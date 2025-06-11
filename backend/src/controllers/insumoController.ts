@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { InsumoModel } from '../models/Insumo';
+import { InsumoModel } from '../models/Insumos';
 import { ApiResponse, AuthRequest } from '../types';
 import { asyncHandler } from '../middlewares/errorHandler';
 

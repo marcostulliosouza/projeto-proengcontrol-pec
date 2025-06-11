@@ -7,6 +7,7 @@ import Chamados from './pages/Chamados'; // Nova importação
 import Manutencao from './pages/Manutencao';
 import ProtectedRoute from './components/layout/ProtectedRoute';
 import MainLayout from './components/layout/MainLayout';
+import Insumos from './pages/Insumos';
 
 function App() {
   return (
@@ -49,6 +50,16 @@ function App() {
             <ProtectedRoute>
               <MainLayout>
                 <Manutencao />
+              </MainLayout>
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/insumos" 
+          element={
+            <ProtectedRoute>
+              <MainLayout>
+                <Insumos />
               </MainLayout>
             </ProtectedRoute>
           } 

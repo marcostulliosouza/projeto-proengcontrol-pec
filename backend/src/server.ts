@@ -565,4 +565,4 @@ process.on('unhandledRejection', (reason, promise) => {
 // Iniciar aplicação
 startServer();
 
-export default app;
+export default app; 
