@@ -174,11 +174,22 @@ const ManutencaoAtiva: React.FC<ManutencaoAtivaProps> = ({
   const handleFinalizar = async () => {
     try {
       setLoading(true);
+      
+      // ✅ GARANTIR QUE TODAS AS RESPOSTAS TENHAM VALORES CORRETOS
+      const respostasCorrigidas = respostas.map(resposta => ({
+        ...resposta,
+        rif_ok: Number(resposta.rif_ok), // Garantir que é number
+        rif_observacao: resposta.rif_observacao || '' // Garantir que não é null
+      }));
+  
+      console.log('🔍 Respostas sendo enviadas:', respostasCorrigidas);
+  
       await ManutencaoService.finalizarManutencao(
         manutencao.lmd_id,
         observacao,
-        respostas
+        respostasCorrigidas
       );
+      
       setShowFinalizarModal(false);
       onFinished();
     } catch (error) {
@@ -209,7 +220,10 @@ const ManutencaoAtiva: React.FC<ManutencaoAtivaProps> = ({
   const updateResposta = (itemId: number, field: string, value: any) => {
     setRespostas(prev => prev.map(resposta => 
       resposta.rif_item === itemId 
-        ? { ...resposta, [field]: value }
+        ? { 
+            ...resposta, 
+            [field]: field === 'rif_ok' ? Number(value) : value // ✅ GARANTIR QUE É NUMBER
+          }
         : resposta
     ));
   };
@@ -386,26 +400,27 @@ const ManutencaoAtiva: React.FC<ManutencaoAtivaProps> = ({
                           </div>
                           
                           <div className="flex space-x-2">
-                            <button
-                              onClick={() => updateResposta(item.ifm_id, 'rif_ok', 1)}
-                              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                                resposta?.rif_ok === 1 // ✅ CORRIGIDO: Era === true
-                                  ? 'bg-green-500 text-white shadow-md'
-                                  : 'bg-green-100 text-green-700 hover:bg-green-200'
-                              }`}
-                            >
-                              ✅ OK
-                            </button>
-                            <button
-                              onClick={() => updateResposta(item.ifm_id, 'rif_ok', 0)}
-                              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                                resposta?.rif_ok === 0 // ✅ CORRIGIDO: Era === false
-                                  ? 'bg-red-500 text-white shadow-md'
-                                  : 'bg-red-100 text-red-700 hover:bg-red-200'
-                              }`}
-                            >
-                              ❌ Não OK
-                            </button>
+                          <button
+                            onClick={() => updateResposta(item.ifm_id, 'rif_ok', 1)} // ✅ NÚMERO 1
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                              resposta?.rif_ok === 1 
+                                ? 'bg-green-500 text-white shadow-md'
+                                : 'bg-green-100 text-green-700 hover:bg-green-200'
+                            }`}
+                          >
+                            ✅ OK
+                          </button>
+
+                          <button
+                            onClick={() => updateResposta(item.ifm_id, 'rif_ok', 0)} // ✅ NÚMERO 0
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                              resposta?.rif_ok === 0 
+                                ? 'bg-red-500 text-white shadow-md'
+                                : 'bg-red-100 text-red-700 hover:bg-red-200'
+                            }`}
+                          >
+                            ❌ Não OK
+                          </button>
                           </div>
                         </div>
                         

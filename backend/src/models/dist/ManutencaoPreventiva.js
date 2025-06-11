@@ -60,10 +60,17 @@ var ManutencaoPreventivaModel = /** @class */ (function () {
                 switch (_a.label) {
                     case 0:
                         _a.trys.push([0, 2, , 3]);
-                        query = "\n        SELECT \n          d.dis_id,\n          d.dis_descricao,\n          d.dis_com_manutencao,\n          d.dis_info_manutencao,\n          COALESCE(dim.dim_tipo_intervalo, 'DIA') as dim_tipo_intervalo,\n          COALESCE(dim.dim_intervalo_dias, 30) as dim_intervalo_dias,\n          COALESCE(dim.dim_intervalo_placas, 1000) as dim_intervalo_placas,\n          COALESCE(dim.dim_placas_executadas, 0) as dim_placas_executadas,\n          dim.dim_data_ultima_manutencao,\n          CASE \n            WHEN COALESCE(dim.dim_tipo_intervalo, 'DIA') = 'DIA' THEN \n              COALESCE(DATEDIFF(NOW(), dim.dim_data_ultima_manutencao), 9999)\n            ELSE \n              COALESCE(dim.dim_placas_executadas, 0)\n          END as dias_desde_ultima,\n          CASE \n            WHEN COALESCE(dim.dim_tipo_intervalo, 'DIA') = 'DIA' THEN \n              COALESCE(DATEDIFF(NOW(), dim.dim_data_ultima_manutencao), 9999) >= COALESCE(dim.dim_intervalo_dias, 30)\n            ELSE \n              COALESCE(dim.dim_placas_executadas, 0) >= COALESCE(dim.dim_intervalo_placas, 1000)\n          END as necessita_manutencao,\n          -- C\u00E1lculo da porcentagem de uso/manuten\u00E7\u00E3o\n          CASE \n            WHEN COALESCE(dim.dim_tipo_intervalo, 'DIA') = 'DIA' THEN \n              ROUND((COALESCE(DATEDIFF(NOW(), dim.dim_data_ultima_manutencao), 0) / COALESCE(dim.dim_intervalo_dias, 30)) * 100, 2)\n            ELSE \n              ROUND((COALESCE(dim.dim_placas_executadas, 0) / COALESCE(dim.dim_intervalo_placas, 1000)) * 100, 2)\n          END as percentual_manutencao\n        FROM dispositivos d\n        LEFT JOIN dispositivo_info_manutencao dim ON d.dis_info_manutencao = dim.dim_id\n        WHERE d.dis_com_manutencao = 1 \n        AND d.dis_status = 1\n        ORDER BY necessita_manutencao DESC, percentual_manutencao DESC\n    ";
+                        query = "\n        SELECT \n          d.dis_id,\n          d.dis_descricao,\n          d.dis_com_manutencao,\n          d.dis_info_manutencao,\n          COALESCE(dim.dim_tipo_intervalo, 'DIA') as dim_tipo_intervalo,\n          COALESCE(dim.dim_intervalo_dias, 30) as dim_intervalo_dias,\n          COALESCE(dim.dim_intervalo_placas, 1000) as dim_intervalo_placas,\n          COALESCE(dim.dim_placas_executadas, 0) as dim_placas_executadas,\n          dim.dim_data_ultima_manutencao,\n          \n          -- \u2705 CORRE\u00C7\u00C3O: C\u00E1lculo correto dos dias/placas desde \u00FAltima manuten\u00E7\u00E3o\n          CASE \n            WHEN COALESCE(dim.dim_tipo_intervalo, 'DIA') = 'DIA' THEN \n              CASE \n                WHEN dim.dim_data_ultima_manutencao IS NULL THEN 999999 -- Nunca teve manuten\u00E7\u00E3o = muito tempo\n                ELSE DATEDIFF(NOW(), dim.dim_data_ultima_manutencao)\n              END\n            ELSE \n              COALESCE(dim.dim_placas_executadas, 0)\n          END as dias_desde_ultima,\n          \n          -- \u2705 CORRE\u00C7\u00C3O: L\u00F3gica para necessita_manutencao\n          CASE \n            WHEN COALESCE(dim.dim_tipo_intervalo, 'DIA') = 'DIA' THEN \n              CASE \n                WHEN dim.dim_data_ultima_manutencao IS NULL THEN 1 -- Nunca teve manuten\u00E7\u00E3o = necessita\n                ELSE (DATEDIFF(NOW(), dim.dim_data_ultima_manutencao) >= COALESCE(dim.dim_intervalo_dias, 30))\n              END\n            ELSE \n              (COALESCE(dim.dim_placas_executadas, 0) >= COALESCE(dim.dim_intervalo_placas, 1000))\n          END as necessita_manutencao,\n          \n          -- \u2705 CORRE\u00C7\u00C3O: C\u00E1lculo correto do percentual\n          CASE \n            WHEN COALESCE(dim.dim_tipo_intervalo, 'DIA') = 'DIA' THEN \n              CASE \n                WHEN dim.dim_data_ultima_manutencao IS NULL THEN 999.99 -- Nunca teve manuten\u00E7\u00E3o = 999%\n                WHEN COALESCE(dim.dim_intervalo_dias, 30) = 0 THEN 0 -- Evitar divis\u00E3o por zero\n                ELSE ROUND(\n                  (DATEDIFF(NOW(), dim.dim_data_ultima_manutencao) / COALESCE(dim.dim_intervalo_dias, 30)) * 100, \n                  2\n                )\n              END\n            ELSE \n              CASE \n                WHEN COALESCE(dim.dim_intervalo_placas, 1000) = 0 THEN 0 -- Evitar divis\u00E3o por zero\n                ELSE ROUND(\n                  (COALESCE(dim.dim_placas_executadas, 0) / COALESCE(dim.dim_intervalo_placas, 1000)) * 100, \n                  2\n                )\n              END\n          END as percentual_manutencao\n        FROM dispositivos d\n        LEFT JOIN dispositivo_info_manutencao dim ON d.dis_info_manutencao = dim.dim_id\n        WHERE d.dis_com_manutencao = 1 \n        AND d.dis_status = 1\n        ORDER BY necessita_manutencao DESC, percentual_manutencao DESC\n      ";
                         return [4 /*yield*/, database_1.executeQuery(query)];
                     case 1:
                         results = _a.sent();
+                        // ✅ LOG para debug
+                        console.log('📊 Dispositivos carregados:', results.length);
+                        results.forEach(function (d) {
+                            if (d.percentual_manutencao > 70) {
+                                console.log("\uD83D\uDD0D " + d.dis_id + " - " + d.dis_descricao + ": " + d.percentual_manutencao + "% - " + (d.necessita_manutencao ? 'NECESSITA' : 'EM DIA'));
+                            }
+                        });
                         return [2 /*return*/, Array.isArray(results) ? results : []];
                     case 2:
                         error_1 = _a.sent();
@@ -145,7 +152,7 @@ var ManutencaoPreventivaModel = /** @class */ (function () {
     // Finalizar manutenção
     ManutencaoPreventivaModel.finalizarManutencao = function (manutencaoId, observacao, respostas) {
         return __awaiter(this, void 0, Promise, function () {
-            var connection, insertRespostasQuery, values, updateLogQuery, updateDispositivoQuery, error_4;
+            var connection, insertRespostasQuery, values, updateLogQuery, updateDispositivoQuery, updateResult, error_4;
             return __generator(this, function (_a) {
                 switch (_a.label) {
                     case 0: return [4 /*yield*/, database_1.pool.getConnection()];
@@ -162,9 +169,11 @@ var ManutencaoPreventivaModel = /** @class */ (function () {
                         values = respostas.map(function (r) { return [
                             r.rif_item,
                             r.rif_log_manutencao,
+                            // ✅ CORREÇÃO: Converter corretamente para BINARY
                             r.rif_ok === 1 ? Buffer.from([1]) : Buffer.from([0]),
-                            r.rif_observacao.toUpperCase()
+                            (r.rif_observacao || '').toUpperCase()
                         ]; });
+                        console.log('🔍 Valores sendo inseridos no banco:', values);
                         return [4 /*yield*/, connection.query(insertRespostasQuery, [values])];
                     case 4:
                         _a.sent();
@@ -174,19 +183,23 @@ var ManutencaoPreventivaModel = /** @class */ (function () {
                         return [4 /*yield*/, connection.execute(updateLogQuery, [observacao, manutencaoId])];
                     case 6:
                         _a.sent();
-                        updateDispositivoQuery = "\n        UPDATE dispositivo_info_manutencao dim\n        INNER JOIN log_manutencao_dispositivo lmd ON lmd.lmd_dispositivo = (\n          SELECT dis_id FROM dispositivos WHERE dis_info_manutencao = dim.dim_id\n        )\n        SET dim.dim_placas_executadas = 0,\n            dim.dim_data_ultima_manutencao = NOW()\n        WHERE lmd.lmd_id = ?\n      ";
+                        updateDispositivoQuery = "\n        UPDATE dispositivo_info_manutencao dim\n        INNER JOIN log_manutencao_dispositivo lmd ON lmd.lmd_dispositivo = (\n          SELECT dis_id FROM dispositivos WHERE dis_info_manutencao = dim.dim_id LIMIT 1\n        )\n        SET dim.dim_placas_executadas = 0,\n            dim.dim_data_ultima_manutencao = NOW()\n        WHERE lmd.lmd_id = ?\n      ";
+                        console.log('🔧 Atualizando info de manutenção do dispositivo...');
                         return [4 /*yield*/, connection.execute(updateDispositivoQuery, [manutencaoId])];
                     case 7:
-                        _a.sent();
+                        updateResult = _a.sent();
+                        console.log('✅ Dispositivo atualizado:', updateResult);
                         return [4 /*yield*/, connection.commit()];
                     case 8:
                         _a.sent();
+                        console.log('✅ Manutenção finalizada com sucesso');
                         return [2 /*return*/, true];
                     case 9:
                         error_4 = _a.sent();
                         return [4 /*yield*/, connection.rollback()];
                     case 10:
                         _a.sent();
+                        console.error('❌ Erro ao finalizar manutenção:', error_4);
                         throw error_4;
                     case 11:
                         connection.release();
