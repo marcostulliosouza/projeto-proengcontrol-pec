@@ -12,6 +12,9 @@ import authRoutes from './routes/authRoutes';
 import dispositivoRoutes from './routes/dispositivoRoutes';
 import chamadoRoutes from './routes/chamadoRoutes';
 import manutencaoRoutes from './routes/manutencaoRoutes';
+import insumoRoutes from './routes/insumoRoutes';
+import compraRoutes from './routes/compraRoutes';
+import orcamentoRoutes from './routes/orcamentoRoutes';
 
 import { testConnection } from './config/database';
 import { errorHandler } from './middlewares/errorHandler';
@@ -486,6 +489,9 @@ app.get(API_PREFIX, (req, res) => {
       dispositivos: `${API_PREFIX}/dispositivos`,
       chamados: `${API_PREFIX}/chamados`,
       manutencao: `${API_PREFIX}/manutencao`,
+      insumos: `${API_PREFIX}/insumos`,
+      compras: `${API_PREFIX}/compras`,
+      orcamentos: `${API_PREFIX}/orcamentos`,
       dashboard: `${API_PREFIX}/dashboard`
     },
     timestamp: new Date().toISOString()
@@ -497,6 +503,9 @@ app.use(`${API_PREFIX}/auth`, authRoutes);
 app.use(`${API_PREFIX}/dispositivos`, dispositivoRoutes);
 app.use(`${API_PREFIX}/chamados`, chamadoRoutes);
 app.use(`${API_PREFIX}/manutencao`, manutencaoRoutes);
+app.use(`${API_PREFIX}/insumos`, insumoRoutes);
+app.use(`${API_PREFIX}/compras`, compraRoutes);
+app.use(`${API_PREFIX}/orcamentos`, orcamentoRoutes);
 
 // Middleware de tratamento de erros (deve ser o último)
 app.use(errorHandler);
