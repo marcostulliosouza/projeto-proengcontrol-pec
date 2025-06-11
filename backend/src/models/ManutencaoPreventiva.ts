@@ -221,7 +221,7 @@ export class ManutencaoPreventivaModel {
     }
   }
 
-  // Finalizar manutenção
+  // ✅ CORREÇÃO PRINCIPAL: Finalizar manutenção com atualizações corretas
   static async finalizarManutencao(
     manutencaoId: number, 
     observacao: string, 
@@ -231,54 +231,99 @@ export class ManutencaoPreventivaModel {
     
     try {
       await connection.beginTransaction();
-  
-      // 1. Inserir respostas dos itens - CORRIGIDO
+      
+      console.log('🔧 Iniciando finalização da manutenção:', {
+        manutencaoId,
+        observacao: observacao.substring(0, 100) + '...',
+        totalRespostas: respostas.length
+      });
+
+      // 1. ✅ CRÍTICO: Inserir respostas com conversão correta
       if (respostas.length > 0) {
-        const insertRespostasQuery = `
-          INSERT INTO resposta_item_formulario (rif_item, rif_log_manutencao, rif_ok, rif_observacao)
-          VALUES ?
-        `;
+        console.log('📝 Salvando respostas do checklist...');
         
-        const values = respostas.map(r => [
-          r.rif_item,
-          r.rif_log_manutencao,
-          // ✅ CORREÇÃO: Converter corretamente para BINARY
-          r.rif_ok === 1 ? Buffer.from([1]) : Buffer.from([0]),
-          (r.rif_observacao || '').toUpperCase()
-        ]);
-  
-        console.log('🔍 Valores sendo inseridos no banco:', values);
-        await connection.query(insertRespostasQuery, [values]);
+        // Validar e converter cada resposta individualmente
+        for (const resposta of respostas) {
+          const insertRespostaQuery = `
+            INSERT INTO resposta_item_formulario (rif_item, rif_log_manutencao, rif_ok, rif_observacao)
+            VALUES (?, ?, ?, ?)
+          `;
+          
+          // ✅ GARANTIR que rif_ok é 0 ou 1
+          const rifOkValue = Number(resposta.rif_ok) === 1 ? 1 : 0;
+          
+          console.log(`💾 Salvando resposta - Item: ${resposta.rif_item}, OK: ${resposta.rif_ok} → ${rifOkValue}`);
+          
+          await connection.execute(insertRespostaQuery, [
+            resposta.rif_item,
+            resposta.rif_log_manutencao,
+            rifOkValue,
+            (resposta.rif_observacao || '').toUpperCase().trim()
+          ]);
+        }
+        
+        console.log('✅ Todas as respostas foram salvas');
       }
-  
-      // 2. Atualizar log de manutenção
+
+      // 2. ✅ Atualizar log de manutenção
+      console.log('📋 Finalizando log de manutenção...');
       const updateLogQuery = `
         UPDATE log_manutencao_dispositivo 
         SET lmd_data_hora_fim = NOW(),
-            lmd_observacao = UPPER(?),
+            lmd_observacao = ?,
             lmd_status = 2
         WHERE lmd_id = ?
       `;
       
-      await connection.execute(updateLogQuery, [observacao, manutencaoId]);
-  
-      // 3. ✅ CORREÇÃO CRÍTICA: Atualizar info de manutenção do dispositivo
-      const updateDispositivoQuery = `
-        UPDATE dispositivo_info_manutencao dim
-        INNER JOIN log_manutencao_dispositivo lmd ON lmd.lmd_dispositivo = (
-          SELECT dis_id FROM dispositivos WHERE dis_info_manutencao = dim.dim_id LIMIT 1
-        )
-        SET dim.dim_placas_executadas = 0,
-            dim.dim_data_ultima_manutencao = NOW()
-        WHERE lmd.lmd_id = ?
+      await connection.execute(updateLogQuery, [observacao.toUpperCase().trim(), manutencaoId]);
+      console.log('✅ Log de manutenção atualizado');
+
+      // 3. ✅ CRÍTICO: Buscar dispositivo relacionado à manutenção
+      const buscarDispositivoQuery = `
+        SELECT lmd_dispositivo 
+        FROM log_manutencao_dispositivo 
+        WHERE lmd_id = ?
       `;
       
-      console.log('🔧 Atualizando info de manutenção do dispositivo...');
-      const updateResult = await connection.execute(updateDispositivoQuery, [manutencaoId]);
-      console.log('✅ Dispositivo atualizado:', updateResult);
-  
+      const [manutencaoInfo] = await connection.execute(buscarDispositivoQuery, [manutencaoId]) as any;
+      
+      if (!manutencaoInfo || manutencaoInfo.length === 0) {
+        throw new Error('Manutenção não encontrada');
+      }
+      
+      const dispositivoId = manutencaoInfo[0].lmd_dispositivo;
+      console.log('🔍 Dispositivo identificado:', dispositivoId);
+
+      // 4. ✅ CRÍTICO: Atualizar informações de manutenção do dispositivo
+      console.log('🔄 Atualizando dados do dispositivo após manutenção...');
+      
+      const updateDispositivoQuery = `
+        UPDATE dispositivo_info_manutencao 
+        SET dim_placas_executadas = 0,
+            dim_data_ultima_manutencao = NOW()
+        WHERE dim_id = (
+          SELECT dis_info_manutencao 
+          FROM dispositivos 
+          WHERE dis_id = ?
+        )
+      `;
+      
+      const updateResult = await connection.execute(updateDispositivoQuery, [dispositivoId]) as any;
+      console.log('✅ Dispositivo atualizado. Linhas afetadas:', updateResult[0].affectedRows);
+
+      // 5. ✅ ADICIONAL: Atualizar ciclos do dispositivo se necessário
+      const updateCiclosQuery = `
+        UPDATE dispositivos 
+        SET dis_ciclos_executados = COALESCE(dis_ciclos_executados, 0)
+        WHERE dis_id = ?
+      `;
+      
+      await connection.execute(updateCiclosQuery, [dispositivoId]);
+      console.log('✅ Ciclos do dispositivo verificados');
+
       await connection.commit();
-      console.log('✅ Manutenção finalizada com sucesso');
+      console.log('🎉 Manutenção finalizada com sucesso!');
+      
       return true;
     } catch (error) {
       await connection.rollback();
@@ -361,7 +406,7 @@ export class ManutencaoPreventivaModel {
     }
   }
 
-  // Buscar detalhes de uma manutenção específica
+  // ✅ CORREÇÃO: Buscar detalhes com conversão correta das respostas
   static async getDetalhesManutencao(manutencaoId: number): Promise<{
     manutencao: ManutencaoPreventiva;
     respostas: RespostaItemFormulario[];
@@ -386,11 +431,12 @@ export class ManutencaoPreventivaModel {
         return null;
       }
 
-      // Buscar respostas dos itens
+      // ✅ Buscar respostas com conversão correta
       const respostasQuery = `
         SELECT 
           rif.*,
-          ifm.ifm_descricao as item_descricao
+          ifm.ifm_descricao as item_descricao,
+          CAST(rif.rif_ok AS UNSIGNED) as rif_ok_converted
         FROM resposta_item_formulario rif
         LEFT JOIN itens_formulario_manutencao ifm ON rif.rif_item = ifm.ifm_id
         WHERE rif.rif_log_manutencao = ?
@@ -401,33 +447,35 @@ export class ManutencaoPreventivaModel {
 
       console.log('🔍 Respostas brutas do banco:', respostasResult);
 
-      // Converter valores binary para number
+      // ✅ CORREÇÃO PRINCIPAL: Conversão confiável de valores
       const respostasConvertidas = Array.isArray(respostasResult) 
         ? respostasResult.map((r: any) => {
-            let rif_ok_final = r.rif_ok;
+            // Usar o valor convertido da query ou fazer conversão manual
+            let rif_ok_final = r.rif_ok_converted !== undefined ? r.rif_ok_converted : r.rif_ok;
             
-            // Converter diferentes formatos possíveis
-            if (Buffer.isBuffer(r.rif_ok)) {
-              // Para Buffer, verifique o valor convertido para número
-              rif_ok_final = Number(r.rif_ok) ? 1 : 0;
-            } else if (typeof r.rif_ok === 'string') {
-              rif_ok_final = r.rif_ok === '1' ? 1 : 0;
-            } else if (typeof r.rif_ok === 'boolean') {
-              rif_ok_final = r.rif_ok ? 1 : 0;
-            } else if (typeof r.rif_ok === 'number') {
-              rif_ok_final = r.rif_ok ? 1 : 0;
+            // Garantir conversão para 0 ou 1
+            if (typeof rif_ok_final === 'boolean') {
+              rif_ok_final = rif_ok_final ? 1 : 0;
+            } else if (Buffer.isBuffer(rif_ok_final)) {
+              rif_ok_final = rif_ok_final[0] === 1 ? 1 : 0;
+            } else {
+              rif_ok_final = Number(rif_ok_final) ? 1 : 0;
             }
             
             console.log(`📝 Item ${r.rif_item}: original=${r.rif_ok}, convertido=${rif_ok_final}`);
             
             return {
-              ...r,
-              rif_ok: rif_ok_final
+              rif_id: r.rif_id,
+              rif_item: r.rif_item,
+              rif_log_manutencao: r.rif_log_manutencao,
+              rif_ok: rif_ok_final,
+              rif_observacao: r.rif_observacao || '',
+              item_descricao: r.item_descricao
             };
           })
         : [];
 
-        console.log('✅ Respostas convertidas finais:', respostasConvertidas);
+      console.log('✅ Respostas convertidas finais:', respostasConvertidas);
 
       return {
         manutencao: manutencaoResult[0],

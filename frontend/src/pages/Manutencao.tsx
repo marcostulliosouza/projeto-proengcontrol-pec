@@ -25,6 +25,10 @@ const Manutencao: React.FC = () => {
   const [tipoFilter, setTipoFilter] = useState<'todos' | 'DIA' | 'PLACA'>('todos');
   const [showFilters, setShowFilters] = useState(false);
 
+  // ✅ CORREÇÃO 1: Estado para controlar atualizações automáticas
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+
   // Estado da paginação para dispositivos
   const [paginationDispositivos, setPaginationDispositivos] = useState<PaginationInfo>({
     currentPage: 1,
@@ -36,10 +40,23 @@ const Manutencao: React.FC = () => {
   const { state: authState } = useAuth();
   const permissions = usePermissions(authState.user?.categoria);
 
-  // Carregar dados iniciais
+  // ✅ CORREÇÃO 2: Carregamento inicial e atualização automática
   useEffect(() => {
     loadData();
   }, []);
+
+  // ✅ CORREÇÃO 3: Atualização automática a cada 30 segundos quando há manutenção ativa
+  useEffect(() => {
+    if (!autoRefresh) return;
+
+    const interval = setInterval(() => {
+      console.log('🔄 Atualizando dados automaticamente...');
+      loadData(false); // false = não mostrar loading
+      setLastRefresh(new Date());
+    }, 30000); // 30 segundos
+
+    return () => clearInterval(interval);
+  }, [autoRefresh, manutencaoAtiva]);
 
   // Atualizar paginação quando os dispositivos mudarem
   useEffect(() => {
@@ -93,20 +110,39 @@ const Manutencao: React.FC = () => {
     return searchTerm !== '' || statusFilter !== 'todos' || tipoFilter !== 'todos';
   };
 
-  const loadData = async () => {
+  // ✅ CORREÇÃO 4: Função de carregamento melhorada
+  const loadData = async (showLoadingState = true) => {
     try {
-      setLoading(true);
+      if (showLoadingState) {
+        setLoading(true);
+      }
+      
+      console.log('📊 Carregando dados de manutenção...');
+      
       const [dispositivosData, manutencaoData] = await Promise.all([
         ManutencaoService.getDispositivosManutencao(),
         ManutencaoService.verificarManutencaoAndamento()
       ]);
       
+      console.log('✅ Dados carregados:', {
+        dispositivos: dispositivosData.length,
+        manutencaoAtiva: !!manutencaoData
+      });
+      
       setDispositivos(dispositivosData);
       setManutencaoAtiva(manutencaoData);
+      
+      // ✅ Se há manutenção ativa, garantir que auto-refresh está ativo
+      if (manutencaoData && !autoRefresh) {
+        setAutoRefresh(true);
+      }
+      
     } catch (error) {
-      console.error('Erro ao carregar dados:', error);
+      console.error('❌ Erro ao carregar dados:', error);
     } finally {
-      setLoading(false);
+      if (showLoadingState) {
+        setLoading(false);
+      }
     }
   };
 
@@ -127,15 +163,21 @@ const Manutencao: React.FC = () => {
     setShowIniciarModal(true);
   };
 
+  // ✅ CORREÇÃO 5: Recarregar dados após iniciar manutenção
   const handleManutencaoIniciada = () => {
     setShowIniciarModal(false);
     setDispositivoSelecionado(null);
-    loadData(); // Recarregar dados
+    console.log('🚀 Manutenção iniciada - recarregando dados...');
+    loadData(); // Recarregar dados imediatamente
+    setAutoRefresh(true); // Ativar auto-refresh
   };
 
+  // ✅ CORREÇÃO 6: Recarregar dados após finalizar manutenção
   const handleManutencaoFinalizada = () => {
     setManutencaoAtiva(null);
-    loadData(); // Recarregar dados
+    console.log('✅ Manutenção finalizada - recarregando dados...');
+    loadData(); // Recarregar dados imediatamente
+    // Manter auto-refresh ativo para outros usuários
   };
 
   // Percentual para manutenção
@@ -175,6 +217,23 @@ const Manutencao: React.FC = () => {
     (paginationDispositivos.currentPage - 1) * paginationDispositivos.itemsPerPage,
     paginationDispositivos.currentPage * paginationDispositivos.itemsPerPage
   );
+
+  // ✅ CORREÇÃO 7: Calcular estatísticas em tempo real
+  const calcularEstatisticas = () => {
+    const total = dispositivos.length;
+    const necessitamManutencao = dispositivos.filter(d => d.necessita_manutencao).length;
+    const emDia = dispositivos.filter(d => !d.necessita_manutencao).length;
+    const taxaConformidade = total > 0 ? Math.round((emDia / total) * 100) : 0;
+
+    return {
+      total,
+      necessitamManutencao,
+      emDia,
+      taxaConformidade
+    };
+  };
+
+  const estatisticas = calcularEstatisticas();
 
   const columnsDispositivos = [
     {
@@ -354,16 +413,34 @@ const Manutencao: React.FC = () => {
             )}
           </div>
           <div className="text-right">
-            <div className="text-4xl font-bold">{dispositivos.length}</div>
+            <div className="text-4xl font-bold">{estatisticas.total}</div>
             <div className="text-blue-100">Dispositivos</div>
-            <Button
-              variant="secondary"
-              onClick={loadData}
-              disabled={loading}
-              className="mt-3 bg-white bg-opacity-20 hover:bg-opacity-30 text-white border-white border-opacity-30"
-            >
-              {loading ? '⏳' : '🔄'} Atualizar
-            </Button>
+            <div className="flex items-center space-x-2 mt-3">
+              <Button
+                variant="secondary"
+                onClick={() => loadData()}
+                disabled={loading}
+                className="bg-white bg-opacity-20 hover:bg-opacity-30 text-white border-white border-opacity-30"
+              >
+                {loading ? '⏳' : '🔄'} Atualizar
+              </Button>
+              {/* ✅ Toggle de auto-refresh */}
+              <Button
+                variant="secondary"
+                onClick={() => setAutoRefresh(!autoRefresh)}
+                className={`bg-white bg-opacity-20 hover:bg-opacity-30 text-white border-white border-opacity-30 ${
+                  autoRefresh ? 'ring-2 ring-white ring-opacity-50' : ''
+                }`}
+                title={autoRefresh ? 'Desativar atualização automática' : 'Ativar atualização automática'}
+              >
+                {autoRefresh ? '🔄' : '⏸️'} Auto
+              </Button>
+            </div>
+            {autoRefresh && (
+              <div className="text-xs text-blue-200 mt-1">
+                Última atualização: {lastRefresh.toLocaleTimeString('pt-BR')}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -377,17 +454,17 @@ const Manutencao: React.FC = () => {
         />
       )}
 
-       {/* Cards de Estatísticas Principais */}
+       {/* ✅ Cards de Estatísticas Atualizados em Tempo Real */}
        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
        <Card className="bg-gradient-to-br from-red-500 to-red-600 text-white transform hover:scale-105 transition-transform shadow-lg">
          <div className="flex items-center justify-between p-6">
            <div>
              <p className="text-red-100 text-sm font-medium">Manutenção Necessária</p>
              <p className="text-3xl font-bold mb-1">
-               {dispositivos.filter(d => d.necessita_manutencao).length}
+               {estatisticas.necessitamManutencao}
              </p>
              <p className="text-red-200 text-xs">
-               {((dispositivos.filter(d => d.necessita_manutencao).length / Math.max(dispositivos.length, 1)) * 100).toFixed(1)}% do total
+               {((estatisticas.necessitamManutencao / Math.max(estatisticas.total, 1)) * 100).toFixed(1)}% do total
              </p>
            </div>
            <div className="w-16 h-16 bg-red-400 bg-opacity-30 rounded-full flex items-center justify-center text-2xl">
@@ -401,10 +478,10 @@ const Manutencao: React.FC = () => {
            <div>
              <p className="text-green-100 text-sm font-medium">Em Dia</p>
              <p className="text-3xl font-bold mb-1">
-               {dispositivos.filter(d => !d.necessita_manutencao).length}
+               {estatisticas.emDia}
              </p>
              <p className="text-green-200 text-xs">
-               {((dispositivos.filter(d => !d.necessita_manutencao).length / Math.max(dispositivos.length, 1)) * 100).toFixed(1)}% do total
+               {((estatisticas.emDia / Math.max(estatisticas.total, 1)) * 100).toFixed(1)}% do total
              </p>
            </div>
            <div className="w-16 h-16 bg-green-400 bg-opacity-30 rounded-full flex items-center justify-center text-2xl">
@@ -417,7 +494,7 @@ const Manutencao: React.FC = () => {
          <div className="flex items-center justify-between p-6">
            <div>
              <p className="text-blue-100 text-sm font-medium">Total de Dispositivos</p>
-             <p className="text-3xl font-bold mb-1">{dispositivos.length}</p>
+             <p className="text-3xl font-bold mb-1">{estatisticas.total}</p>
              <p className="text-blue-200 text-xs">
                Configurados para manutenção
              </p>
@@ -433,10 +510,7 @@ const Manutencao: React.FC = () => {
            <div>
              <p className="text-purple-100 text-sm font-medium">Taxa de Conformidade</p>
              <p className="text-3xl font-bold mb-1">
-               {dispositivos.length > 0 
-                 ? Math.round(((dispositivos.filter(d => !d.necessita_manutencao).length / dispositivos.length) * 100))
-                 : 0
-               }%
+               {estatisticas.taxaConformidade}%
              </p>
              <p className="text-purple-200 text-xs">
                Dispositivos em dia
@@ -535,7 +609,7 @@ const Manutencao: React.FC = () => {
                   </Button>
                   <Button
                     variant="primary"
-                    onClick={loadData}
+                    onClick={() => loadData()}
                     disabled={loading}
                     className="flex items-center space-x-2 shadow-lg"
                   >

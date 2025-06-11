@@ -29,6 +29,7 @@ const ManutencaoAtiva: React.FC<ManutencaoAtivaProps> = ({
   const [loadingFormulario, setLoadingFormulario] = useState(true);
   const [formularioError, setFormularioError] = useState<string | null>(null);
 
+  // ✅ CORREÇÃO 1: Atualizar tempo em tempo real a cada segundo
   useEffect(() => {
     const calcularTempo = () => {
       const inicio = new Date(manutencao.lmd_data_hora_inicio);
@@ -38,7 +39,8 @@ const ManutencaoAtiva: React.FC<ManutencaoAtivaProps> = ({
     };
 
     calcularTempo();
-    const interval = setInterval(calcularTempo, 60000);
+    // ✅ Mudança: Atualizar a cada 30 segundos em vez de 1 minuto
+    const interval = setInterval(calcularTempo, 30000);
     return () => clearInterval(interval);
   }, [manutencao.lmd_data_hora_inicio]);
 
@@ -46,7 +48,6 @@ const ManutencaoAtiva: React.FC<ManutencaoAtivaProps> = ({
     loadFormulario();
   }, []);
 
-  // ✅ MÉTODO COMPLETAMENTE REESCRITO - Carrega formulário real do banco
   const loadFormulario = async () => {
     try {
       setLoadingFormulario(true);
@@ -104,11 +105,11 @@ const ManutencaoAtiva: React.FC<ManutencaoAtivaProps> = ({
       // 4. Configurar os itens do formulário
       setItensFormulario(itensCarregados);
 
-      // 5. Inicializar respostas baseadas nos itens carregados
+      // 5. ✅ CORREÇÃO 2: Inicializar respostas corretamente
       const respostasIniciais = itensCarregados.map(item => ({
         rif_item: item.ifm_id,
         rif_log_manutencao: manutencao.lmd_id,
-        rif_ok: 1, // OK por padrão
+        rif_ok: 1, // ✅ Garantir que inicia como número 1
         rif_observacao: ''
       }));
       
@@ -117,7 +118,8 @@ const ManutencaoAtiva: React.FC<ManutencaoAtivaProps> = ({
       console.log('✅ Formulário carregado com sucesso:', {
         totalItens: itensCarregados.length,
         formularioId: dispositivoDetalhes.dim_formulario_manutencao,
-        formularioNome: dispositivoDetalhes.formulario_descricao
+        formularioNome: dispositivoDetalhes.formulario_descricao,
+        respostasIniciais
       });
 
     } catch (error) {
@@ -171,30 +173,49 @@ const ManutencaoAtiva: React.FC<ManutencaoAtivaProps> = ({
     }
   };
 
+  // ✅ CORREÇÃO 3: Validação e envio correto das respostas
   const handleFinalizar = async () => {
     try {
       setLoading(true);
       
-      // ✅ GARANTIR QUE TODAS AS RESPOSTAS TENHAM VALORES CORRETOS
-      const respostasCorrigidas = respostas.map(resposta => ({
-        ...resposta,
-        rif_ok: Number(resposta.rif_ok), // Garantir que é number
-        rif_observacao: resposta.rif_observacao || '' // Garantir que não é null
-      }));
-  
-      console.log('🔍 Respostas sendo enviadas:', respostasCorrigidas);
-  
+      // ✅ Validar respostas antes do envio
+      const respostasValidadas = respostas.map(resposta => {
+        console.log(`🔍 Validando resposta item ${resposta.rif_item}:`, resposta);
+        
+        // Garantir que rif_ok é sempre 0 ou 1
+        let rif_ok_final = resposta.rif_ok;
+        if (typeof rif_ok_final === 'boolean') {
+          rif_ok_final = rif_ok_final ? 1 : 0;
+        } else if (typeof rif_ok_final === 'string') {
+          rif_ok_final = rif_ok_final === '1' ? 1 : 0;
+        } else {
+          rif_ok_final = Number(rif_ok_final) ? 1 : 0;
+        }
+        
+        console.log(`✅ Resposta validada: ${resposta.rif_ok} → ${rif_ok_final}`);
+        
+        return {
+          ...resposta,
+          rif_ok: rif_ok_final,
+          rif_observacao: (resposta.rif_observacao || '').trim()
+        };
+      });
+
+      console.log('📤 Enviando respostas finais:', respostasValidadas);
+      console.log('📝 Observação final:', observacao);
+
       await ManutencaoService.finalizarManutencao(
         manutencao.lmd_id,
-        observacao,
-        respostasCorrigidas
+        observacao.trim(),
+        respostasValidadas
       );
       
+      console.log('✅ Manutenção finalizada com sucesso!');
       setShowFinalizarModal(false);
       onFinished();
     } catch (error) {
-      console.error('Erro ao finalizar manutenção:', error);
-      alert('Erro ao finalizar manutenção');
+      console.error('❌ Erro ao finalizar manutenção:', error);
+      alert('Erro ao finalizar manutenção. Tente novamente.');
     } finally {
       setLoading(false);
     }
@@ -217,15 +238,21 @@ const ManutencaoAtiva: React.FC<ManutencaoAtivaProps> = ({
     }
   };
 
+  // ✅ CORREÇÃO 4: Função de atualização de resposta melhorada
   const updateResposta = (itemId: number, field: string, value: any) => {
-    setRespostas(prev => prev.map(resposta => 
-      resposta.rif_item === itemId 
-        ? { 
-            ...resposta, 
-            [field]: field === 'rif_ok' ? Number(value) : value // ✅ GARANTIR QUE É NUMBER
-          }
-        : resposta
-    ));
+    console.log(`🔄 Atualizando resposta - Item: ${itemId}, Campo: ${field}, Valor: ${value}`);
+    
+    setRespostas(prev => prev.map(resposta => {
+      if (resposta.rif_item === itemId) {
+        const novaResposta = { 
+          ...resposta, 
+          [field]: field === 'rif_ok' ? Number(value) : value
+        };
+        console.log(`✅ Resposta atualizada:`, novaResposta);
+        return novaResposta;
+      }
+      return resposta;
+    }));
   };
 
   const formatTempo = (minutos: number) => {
@@ -265,13 +292,12 @@ const ManutencaoAtiva: React.FC<ManutencaoAtivaProps> = ({
             <div>
               <h2 className="text-xl font-bold text-orange-900 flex items-center">
                 🔧 Manutenção em Andamento
-                <span className="ml-2 text-sm bg-orange-200 text-orange-800 px-2 py-1 rounded-full">
+                <span className="ml-2 text-sm bg-orange-200 text-orange-800 px-2 py-1 rounded-full font-mono">
                   {formatTempo(tempoDecorrido)}
                 </span>
               </h2>
               <p className="text-orange-700 text-sm">{manutencao.dispositivo_descricao}</p>
               
-              {/* ✅ MOSTRAR INFORMAÇÕES DO FORMULÁRIO */}
               {dispositivoDetalhes && (
                 <p className="text-orange-600 text-xs mt-1">
                   📋 {dispositivoDetalhes.formulario_descricao} 
@@ -287,7 +313,6 @@ const ManutencaoAtiva: React.FC<ManutencaoAtivaProps> = ({
 
         {expandedCard && (
           <div className="mt-6 space-y-6">
-            {/* ✅ MOSTRAR LOADING DO FORMULÁRIO */}
             {loadingFormulario && (
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <div className="flex items-center space-x-2">
@@ -297,7 +322,6 @@ const ManutencaoAtiva: React.FC<ManutencaoAtivaProps> = ({
               </div>
             )}
 
-            {/* ✅ MOSTRAR INFORMAÇÕES DO DISPOSITIVO E FORMULÁRIO */}
             {dispositivoDetalhes && !loadingFormulario && (
               <div className="bg-white rounded-lg p-4 shadow-sm">
                 <h4 className="font-medium text-gray-900 mb-2">📱 Informações do Dispositivo</h4>
@@ -377,7 +401,7 @@ const ManutencaoAtiva: React.FC<ManutencaoAtivaProps> = ({
                         key={item.ifm_id} 
                         className={`border-2 rounded-lg p-4 transition-all duration-200 ${
                           isCompleted 
-                            ? resposta?.rif_ok === 1 // ✅ CORRIGIDO: Era === true
+                            ? resposta?.rif_ok === 1
                               ? 'border-green-200 bg-green-50' 
                               : 'border-red-200 bg-red-50'
                             : 'border-gray-200 bg-gray-50'
@@ -387,12 +411,12 @@ const ManutencaoAtiva: React.FC<ManutencaoAtivaProps> = ({
                           <div className="flex items-start space-x-3">
                             <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
                               isCompleted 
-                                ? resposta?.rif_ok === 1 // ✅ CORRIGIDO: Era === true
+                                ? resposta?.rif_ok === 1
                                   ? 'bg-green-500 text-white' 
                                   : 'bg-red-500 text-white'
                                 : 'bg-gray-300 text-gray-600'
                             }`}>
-                              {isCompleted ? (resposta?.rif_ok === 1 ? '✓' : '✗') : index + 1} {/* ✅ CORRIGIDO */}
+                              {isCompleted ? (resposta?.rif_ok === 1 ? '✓' : '✗') : index + 1}
                             </div>
                             <div>
                               <p className="font-medium text-gray-900">{item.ifm_descricao}</p>
@@ -400,27 +424,27 @@ const ManutencaoAtiva: React.FC<ManutencaoAtivaProps> = ({
                           </div>
                           
                           <div className="flex space-x-2">
-                          <button
-                            onClick={() => updateResposta(item.ifm_id, 'rif_ok', 1)} // ✅ NÚMERO 1
-                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                              resposta?.rif_ok === 1 
-                                ? 'bg-green-500 text-white shadow-md'
-                                : 'bg-green-100 text-green-700 hover:bg-green-200'
-                            }`}
-                          >
-                            ✅ OK
-                          </button>
+                            <button
+                              onClick={() => updateResposta(item.ifm_id, 'rif_ok', 1)}
+                              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                                resposta?.rif_ok === 1 
+                                  ? 'bg-green-500 text-white shadow-md'
+                                  : 'bg-green-100 text-green-700 hover:bg-green-200'
+                              }`}
+                            >
+                              ✅ OK
+                            </button>
 
-                          <button
-                            onClick={() => updateResposta(item.ifm_id, 'rif_ok', 0)} // ✅ NÚMERO 0
-                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                              resposta?.rif_ok === 0 
-                                ? 'bg-red-500 text-white shadow-md'
-                                : 'bg-red-100 text-red-700 hover:bg-red-200'
-                            }`}
-                          >
-                            ❌ Não OK
-                          </button>
+                            <button
+                              onClick={() => updateResposta(item.ifm_id, 'rif_ok', 0)}
+                              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                                resposta?.rif_ok === 0 
+                                  ? 'bg-red-500 text-white shadow-md'
+                                  : 'bg-red-100 text-red-700 hover:bg-red-200'
+                              }`}
+                            >
+                              ❌ Não OK
+                            </button>
                           </div>
                         </div>
                         
@@ -486,9 +510,9 @@ const ManutencaoAtiva: React.FC<ManutencaoAtivaProps> = ({
                         return (
                           <div key={resposta.rif_item} className="flex items-center space-x-2 text-sm">
                             <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs ${
-                              resposta.rif_ok === 1 ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600' // ✅ CORRIGIDO
+                              resposta.rif_ok === 1 ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'
                             }`}>
-                              {resposta.rif_ok === 1 ? '✓' : '✗'} {/* ✅ CORRIGIDO */}
+                              {resposta.rif_ok === 1 ? '✓' : '✗'}
                             </span>
                             <span className="text-gray-700">{item?.ifm_descricao}</span>
                           </div>
@@ -502,7 +526,7 @@ const ManutencaoAtiva: React.FC<ManutencaoAtivaProps> = ({
                     <div className="space-y-2 text-sm">
                       <p><strong>Dispositivo:</strong> {manutencao.dispositivo_descricao}</p>
                       <p><strong>Duração:</strong> {formatTempo(tempoDecorrido)}</p>
-                      <p><strong>Itens OK:</strong> {respostas.filter(r => r.rif_ok === 1).length}/{respostas.length}</p> {/* ✅ CORRIGIDO */}
+                      <p><strong>Itens OK:</strong> {respostas.filter(r => r.rif_ok === 1).length}/{respostas.length}</p>
                       <p><strong>Observações:</strong> {observacao.length} caracteres</p>
                     </div>
                   </div>
@@ -586,7 +610,7 @@ const ManutencaoAtiva: React.FC<ManutencaoAtivaProps> = ({
               </div>
               <div>
                 <p><strong>Itens verificados:</strong> {respostas.length}</p>
-                <p><strong>Status OK:</strong> {respostas.filter(r => r.rif_ok === 1).length}</p> {/* ✅ CORRIGIDO */}
+                <p><strong>Status OK:</strong> {respostas.filter(r => r.rif_ok === 1).length}</p>
               </div>
             </div>
 

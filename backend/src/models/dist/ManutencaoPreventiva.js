@@ -1,15 +1,4 @@
 "use strict";
-var __assign = (this && this.__assign) || function () {
-    __assign = Object.assign || function(t) {
-        for (var s, i = 1, n = arguments.length; i < n; i++) {
-            s = arguments[i];
-            for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p))
-                t[p] = s[p];
-        }
-        return t;
-    };
-    return __assign.apply(this, arguments);
-};
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
     return new (P || (P = Promise))(function (resolve, reject) {
@@ -149,10 +138,10 @@ var ManutencaoPreventivaModel = /** @class */ (function () {
             });
         });
     };
-    // Finalizar manutenção
+    // ✅ CORREÇÃO PRINCIPAL: Finalizar manutenção com atualizações corretas
     ManutencaoPreventivaModel.finalizarManutencao = function (manutencaoId, observacao, respostas) {
         return __awaiter(this, void 0, Promise, function () {
-            var connection, insertRespostasQuery, values, updateLogQuery, updateDispositivoQuery, updateResult, error_4;
+            var connection, _i, respostas_1, resposta, insertRespostaQuery, rifOkValue, updateLogQuery, buscarDispositivoQuery, manutencaoInfo, dispositivoId, updateDispositivoQuery, updateResult, updateCiclosQuery, error_4;
             return __generator(this, function (_a) {
                 switch (_a.label) {
                     case 0: return [4 /*yield*/, database_1.pool.getConnection()];
@@ -160,51 +149,85 @@ var ManutencaoPreventivaModel = /** @class */ (function () {
                         connection = _a.sent();
                         _a.label = 2;
                     case 2:
-                        _a.trys.push([2, 9, 11, 12]);
+                        _a.trys.push([2, 14, 16, 17]);
                         return [4 /*yield*/, connection.beginTransaction()];
                     case 3:
                         _a.sent();
-                        if (!(respostas.length > 0)) return [3 /*break*/, 5];
-                        insertRespostasQuery = "\n          INSERT INTO resposta_item_formulario (rif_item, rif_log_manutencao, rif_ok, rif_observacao)\n          VALUES ?\n        ";
-                        values = respostas.map(function (r) { return [
-                            r.rif_item,
-                            r.rif_log_manutencao,
-                            // ✅ CORREÇÃO: Converter corretamente para BINARY
-                            r.rif_ok === 1 ? Buffer.from([1]) : Buffer.from([0]),
-                            (r.rif_observacao || '').toUpperCase()
-                        ]; });
-                        console.log('🔍 Valores sendo inseridos no banco:', values);
-                        return [4 /*yield*/, connection.query(insertRespostasQuery, [values])];
+                        console.log('🔧 Iniciando finalização da manutenção:', {
+                            manutencaoId: manutencaoId,
+                            observacao: observacao.substring(0, 100) + '...',
+                            totalRespostas: respostas.length
+                        });
+                        if (!(respostas.length > 0)) return [3 /*break*/, 8];
+                        console.log('📝 Salvando respostas do checklist...');
+                        _i = 0, respostas_1 = respostas;
+                        _a.label = 4;
                     case 4:
-                        _a.sent();
-                        _a.label = 5;
+                        if (!(_i < respostas_1.length)) return [3 /*break*/, 7];
+                        resposta = respostas_1[_i];
+                        insertRespostaQuery = "\n            INSERT INTO resposta_item_formulario (rif_item, rif_log_manutencao, rif_ok, rif_observacao)\n            VALUES (?, ?, ?, ?)\n          ";
+                        rifOkValue = Number(resposta.rif_ok) === 1 ? 1 : 0;
+                        console.log("\uD83D\uDCBE Salvando resposta - Item: " + resposta.rif_item + ", OK: " + resposta.rif_ok + " \u2192 " + rifOkValue);
+                        return [4 /*yield*/, connection.execute(insertRespostaQuery, [
+                                resposta.rif_item,
+                                resposta.rif_log_manutencao,
+                                rifOkValue,
+                                (resposta.rif_observacao || '').toUpperCase().trim()
+                            ])];
                     case 5:
-                        updateLogQuery = "\n        UPDATE log_manutencao_dispositivo \n        SET lmd_data_hora_fim = NOW(),\n            lmd_observacao = UPPER(?),\n            lmd_status = 2\n        WHERE lmd_id = ?\n      ";
-                        return [4 /*yield*/, connection.execute(updateLogQuery, [observacao, manutencaoId])];
+                        _a.sent();
+                        _a.label = 6;
                     case 6:
-                        _a.sent();
-                        updateDispositivoQuery = "\n        UPDATE dispositivo_info_manutencao dim\n        INNER JOIN log_manutencao_dispositivo lmd ON lmd.lmd_dispositivo = (\n          SELECT dis_id FROM dispositivos WHERE dis_info_manutencao = dim.dim_id LIMIT 1\n        )\n        SET dim.dim_placas_executadas = 0,\n            dim.dim_data_ultima_manutencao = NOW()\n        WHERE lmd.lmd_id = ?\n      ";
-                        console.log('🔧 Atualizando info de manutenção do dispositivo...');
-                        return [4 /*yield*/, connection.execute(updateDispositivoQuery, [manutencaoId])];
+                        _i++;
+                        return [3 /*break*/, 4];
                     case 7:
-                        updateResult = _a.sent();
-                        console.log('✅ Dispositivo atualizado:', updateResult);
-                        return [4 /*yield*/, connection.commit()];
+                        console.log('✅ Todas as respostas foram salvas');
+                        _a.label = 8;
                     case 8:
-                        _a.sent();
-                        console.log('✅ Manutenção finalizada com sucesso');
-                        return [2 /*return*/, true];
+                        // 2. ✅ Atualizar log de manutenção
+                        console.log('📋 Finalizando log de manutenção...');
+                        updateLogQuery = "\n        UPDATE log_manutencao_dispositivo \n        SET lmd_data_hora_fim = NOW(),\n            lmd_observacao = ?,\n            lmd_status = 2\n        WHERE lmd_id = ?\n      ";
+                        return [4 /*yield*/, connection.execute(updateLogQuery, [observacao.toUpperCase().trim(), manutencaoId])];
                     case 9:
+                        _a.sent();
+                        console.log('✅ Log de manutenção atualizado');
+                        buscarDispositivoQuery = "\n        SELECT lmd_dispositivo \n        FROM log_manutencao_dispositivo \n        WHERE lmd_id = ?\n      ";
+                        return [4 /*yield*/, connection.execute(buscarDispositivoQuery, [manutencaoId])];
+                    case 10:
+                        manutencaoInfo = (_a.sent())[0];
+                        if (!manutencaoInfo || manutencaoInfo.length === 0) {
+                            throw new Error('Manutenção não encontrada');
+                        }
+                        dispositivoId = manutencaoInfo[0].lmd_dispositivo;
+                        console.log('🔍 Dispositivo identificado:', dispositivoId);
+                        // 4. ✅ CRÍTICO: Atualizar informações de manutenção do dispositivo
+                        console.log('🔄 Atualizando dados do dispositivo após manutenção...');
+                        updateDispositivoQuery = "\n        UPDATE dispositivo_info_manutencao \n        SET dim_placas_executadas = 0,\n            dim_data_ultima_manutencao = NOW()\n        WHERE dim_id = (\n          SELECT dis_info_manutencao \n          FROM dispositivos \n          WHERE dis_id = ?\n        )\n      ";
+                        return [4 /*yield*/, connection.execute(updateDispositivoQuery, [dispositivoId])];
+                    case 11:
+                        updateResult = _a.sent();
+                        console.log('✅ Dispositivo atualizado. Linhas afetadas:', updateResult[0].affectedRows);
+                        updateCiclosQuery = "\n        UPDATE dispositivos \n        SET dis_ciclos_executados = COALESCE(dis_ciclos_executados, 0)\n        WHERE dis_id = ?\n      ";
+                        return [4 /*yield*/, connection.execute(updateCiclosQuery, [dispositivoId])];
+                    case 12:
+                        _a.sent();
+                        console.log('✅ Ciclos do dispositivo verificados');
+                        return [4 /*yield*/, connection.commit()];
+                    case 13:
+                        _a.sent();
+                        console.log('🎉 Manutenção finalizada com sucesso!');
+                        return [2 /*return*/, true];
+                    case 14:
                         error_4 = _a.sent();
                         return [4 /*yield*/, connection.rollback()];
-                    case 10:
+                    case 15:
                         _a.sent();
                         console.error('❌ Erro ao finalizar manutenção:', error_4);
                         throw error_4;
-                    case 11:
+                    case 16:
                         connection.release();
                         return [7 /*endfinally*/];
-                    case 12: return [2 /*return*/];
+                    case 17: return [2 /*return*/];
                 }
             });
         });
@@ -279,7 +302,7 @@ var ManutencaoPreventivaModel = /** @class */ (function () {
             });
         });
     };
-    // Buscar detalhes de uma manutenção específica
+    // ✅ CORREÇÃO: Buscar detalhes com conversão correta das respostas
     ManutencaoPreventivaModel.getDetalhesManutencao = function (manutencaoId) {
         return __awaiter(this, void 0, Promise, function () {
             var manutencaoQuery, manutencaoResult, respostasQuery, respostasResult, respostasConvertidas, error_7;
@@ -294,30 +317,34 @@ var ManutencaoPreventivaModel = /** @class */ (function () {
                         if (!Array.isArray(manutencaoResult) || manutencaoResult.length === 0) {
                             return [2 /*return*/, null];
                         }
-                        respostasQuery = "\n        SELECT \n          rif.*,\n          ifm.ifm_descricao as item_descricao\n        FROM resposta_item_formulario rif\n        LEFT JOIN itens_formulario_manutencao ifm ON rif.rif_item = ifm.ifm_id\n        WHERE rif.rif_log_manutencao = ?\n        ORDER BY ifm.ifm_posicao\n      ";
+                        respostasQuery = "\n        SELECT \n          rif.*,\n          ifm.ifm_descricao as item_descricao,\n          CAST(rif.rif_ok AS UNSIGNED) as rif_ok_converted\n        FROM resposta_item_formulario rif\n        LEFT JOIN itens_formulario_manutencao ifm ON rif.rif_item = ifm.ifm_id\n        WHERE rif.rif_log_manutencao = ?\n        ORDER BY ifm.ifm_posicao\n      ";
                         return [4 /*yield*/, database_1.executeQuery(respostasQuery, [manutencaoId])];
                     case 2:
                         respostasResult = _a.sent();
                         console.log('🔍 Respostas brutas do banco:', respostasResult);
                         respostasConvertidas = Array.isArray(respostasResult)
                             ? respostasResult.map(function (r) {
-                                var rif_ok_final = r.rif_ok;
-                                // Converter diferentes formatos possíveis
-                                if (Buffer.isBuffer(r.rif_ok)) {
-                                    // Para Buffer, verifique o valor convertido para número
-                                    rif_ok_final = Number(r.rif_ok) ? 1 : 0;
+                                // Usar o valor convertido da query ou fazer conversão manual
+                                var rif_ok_final = r.rif_ok_converted !== undefined ? r.rif_ok_converted : r.rif_ok;
+                                // Garantir conversão para 0 ou 1
+                                if (typeof rif_ok_final === 'boolean') {
+                                    rif_ok_final = rif_ok_final ? 1 : 0;
                                 }
-                                else if (typeof r.rif_ok === 'string') {
-                                    rif_ok_final = r.rif_ok === '1' ? 1 : 0;
+                                else if (Buffer.isBuffer(rif_ok_final)) {
+                                    rif_ok_final = rif_ok_final[0] === 1 ? 1 : 0;
                                 }
-                                else if (typeof r.rif_ok === 'boolean') {
-                                    rif_ok_final = r.rif_ok ? 1 : 0;
-                                }
-                                else if (typeof r.rif_ok === 'number') {
-                                    rif_ok_final = r.rif_ok ? 1 : 0;
+                                else {
+                                    rif_ok_final = Number(rif_ok_final) ? 1 : 0;
                                 }
                                 console.log("\uD83D\uDCDD Item " + r.rif_item + ": original=" + r.rif_ok + ", convertido=" + rif_ok_final);
-                                return __assign(__assign({}, r), { rif_ok: rif_ok_final });
+                                return {
+                                    rif_id: r.rif_id,
+                                    rif_item: r.rif_item,
+                                    rif_log_manutencao: r.rif_log_manutencao,
+                                    rif_ok: rif_ok_final,
+                                    rif_observacao: r.rif_observacao || '',
+                                    item_descricao: r.item_descricao
+                                };
                             })
                             : [];
                         console.log('✅ Respostas convertidas finais:', respostasConvertidas);
