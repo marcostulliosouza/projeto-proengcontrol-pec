@@ -144,6 +144,12 @@ const DetalhesManutencaoModal: React.FC<DetalhesManutencaoModalProps> = ({
           {/* Cards de Informações Principais */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="bg-white p-3 rounded-lg border">
+              <div className="text-xs text-slate-500 font-medium">DT</div>
+              <div className="text-sm font-semibold text-slate-900">
+                {String(manutencao.lmd_dispositivo).padStart(6, '0') || 'Não informado'}
+              </div>
+            </div>
+            <div className="bg-white p-3 rounded-lg border">
               <div className="text-xs text-slate-500 font-medium">Dispositivo</div>
               <div className="text-sm font-semibold text-slate-900">
                 {manutencao.dispositivo_descricao || 'Não informado'}
@@ -228,11 +234,11 @@ const DetalhesManutencaoModal: React.FC<DetalhesManutencaoModalProps> = ({
                       <div className="flex items-center space-x-4 text-xs">
                         <span className="flex items-center space-x-1">
                           <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                          <span>{respostas.filter(r => r.rif_ok === 1).length} itens OK</span> {/* ✅ CORRIGIDO */}
+                          <span>{respostas.filter(r => r.rif_ok === 1).length} itens OK</span>
                         </span>
                         <span className="flex items-center space-x-1">
                           <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                          <span>{respostas.filter(r => r.rif_ok === 0).length} itens com problema</span> {/* ✅ CORRIGIDO */}
+                          <span>{respostas.filter(r => r.rif_ok === 0).length} itens com problema</span>
                         </span>
                         <span className="text-slate-500">
                           Total: {respostas.length} itens verificados

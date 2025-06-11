@@ -60,7 +60,7 @@ export interface ItemFormulario {
 export interface RespostaItem {
   rif_item: number;
   rif_log_manutencao: number;
-  rif_ok: number; // ✅ CORRIGIDO: 0=Não OK, 1=OK (era boolean)
+  rif_ok: number;
   rif_observacao: string;
   item_descricao?: string;
 }

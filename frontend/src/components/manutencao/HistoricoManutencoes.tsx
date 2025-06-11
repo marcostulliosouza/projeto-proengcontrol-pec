@@ -89,6 +89,17 @@ const HistoricoManutencoes: React.FC = () => {
       render: (value: unknown) => `#${value}`
     },
     {
+      key: 'lmd_dispositivo',
+      label: 'DT',
+      render: (value: unknown) => {
+        const strValor = String (value || '');
+        const formatValor = strValor.padStart(6, '0');
+        return (
+          <span className="font-medium text-gray-900">{formatValor}</span>
+        );
+      },
+    },
+    {
       key: 'dispositivo_descricao',
       label: 'Dispositivo',
       render: (value: unknown) => (

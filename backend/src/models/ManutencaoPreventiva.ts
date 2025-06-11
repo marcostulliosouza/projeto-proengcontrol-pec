@@ -399,10 +399,13 @@ export class ManutencaoPreventivaModel {
             
             // Converter diferentes formatos possíveis
             if (Buffer.isBuffer(r.rif_ok)) {
-              rif_ok_final = r.rif_ok[0] === 1 ? 1 : 0;
+              // Para Buffer, verifique o valor convertido para número
+              rif_ok_final = Number(r.rif_ok) ? 1 : 0;
             } else if (typeof r.rif_ok === 'string') {
               rif_ok_final = r.rif_ok === '1' ? 1 : 0;
             } else if (typeof r.rif_ok === 'boolean') {
+              rif_ok_final = r.rif_ok ? 1 : 0;
+            } else if (typeof r.rif_ok === 'number') {
               rif_ok_final = r.rif_ok ? 1 : 0;
             }
             
