@@ -604,6 +604,154 @@ export class ManutencaoPreventivaModel {
       throw error;
     }
   }
+
+    // Buscar métricas completas de manutenção
+    static async getMetricas(dataInicio?: string, dataFim?: string): Promise<{
+      totalManutencoes: number;
+      tempoMedioMinutos: number;
+      manutencoesPendentes: number;
+      totalDispositivos: number;
+      porDispositivo: Array<{ nome: string; total: number }>;
+      porColaborador: Array<{ nome: string; total: number }>;
+      evolucaoMensal: Array<{ mes: string; total: number; tempo_medio: number }>;
+    }> {
+      try {
+        // Definir período padrão se não fornecido
+        const inicio = dataInicio || new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0];
+        const fim = dataFim || new Date().toISOString().split('T')[0];
+  
+        console.log(`🔍 Buscando métricas para período: ${inicio} até ${fim}`);
+  
+        // 1. Métricas principais
+        const metricasQuery = `
+          SELECT 
+            COUNT(CASE WHEN lmd_status IN (2, 3) THEN 1 END) as total_manutencoes,
+            ROUND(AVG(CASE 
+              WHEN lmd_status IN (2, 3) AND lmd_data_hora_fim IS NOT NULL THEN 
+                TIMESTAMPDIFF(MINUTE, lmd_data_hora_inicio, lmd_data_hora_fim)
+              END)) as tempo_medio_minutos,
+            COUNT(CASE WHEN lmd_status = 1 THEN 1 END) as manutencoes_pendentes
+          FROM log_manutencao_dispositivo lmd
+          WHERE DATE(lmd_data_hora_inicio) BETWEEN ? AND ?
+        `;
+  
+        const metricasResult = await executeQuery(metricasQuery, [inicio, fim]);
+        const metricas = Array.isArray(metricasResult) && metricasResult.length > 0 ? metricasResult[0] : {
+          total_manutencoes: 0,
+          tempo_medio_minutos: 0,
+          manutencoes_pendentes: 0
+        };
+  
+        console.log('📊 Métricas principais:', metricas);
+  
+        // 2. Total de dispositivos com manutenção
+        const dispositivosQuery = `
+          SELECT COUNT(DISTINCT dis_id) as total_dispositivos
+          FROM dispositivos d
+          WHERE d.dis_com_manutencao = 1 AND d.dis_status = 1
+        `;
+  
+        const dispositivosResult = await executeQuery(dispositivosQuery);
+        const totalDispositivos = Array.isArray(dispositivosResult) && dispositivosResult.length > 0 
+          ? dispositivosResult[0].total_dispositivos 
+          : 0;
+  
+        console.log('📱 Total dispositivos:', totalDispositivos);
+  
+        // 3. Manutenções por dispositivo
+        const porDispositivoQuery = `
+          SELECT 
+            d.dis_descricao as nome,
+            COUNT(lmd.lmd_id) as total
+          FROM log_manutencao_dispositivo lmd
+          INNER JOIN dispositivos d ON lmd.lmd_dispositivo = d.dis_id
+          WHERE DATE(lmd.lmd_data_hora_inicio) BETWEEN ? AND ?
+            AND lmd.lmd_status IN (2, 3)
+          GROUP BY d.dis_id, d.dis_descricao
+          HAVING COUNT(lmd.lmd_id) > 0
+          ORDER BY total DESC
+          LIMIT 20
+        `;
+  
+        const porDispositivoResult = await executeQuery(porDispositivoQuery, [inicio, fim]);
+        const porDispositivo = Array.isArray(porDispositivoResult) ? porDispositivoResult : [];
+  
+        console.log('🔧 Manutenções por dispositivo:', porDispositivo.length, 'dispositivos');
+  
+        // 4. Manutenções por colaborador
+        const porColaboradorQuery = `
+          SELECT 
+            c.col_nome as nome,
+            COUNT(lmd.lmd_id) as total
+          FROM log_manutencao_dispositivo lmd
+          INNER JOIN colaboradores c ON lmd.lmd_colaborador = c.col_id
+          WHERE DATE(lmd.lmd_data_hora_inicio) BETWEEN ? AND ?
+            AND lmd.lmd_status IN (2, 3)
+          GROUP BY c.col_id, c.col_nome
+          HAVING COUNT(lmd.lmd_id) > 0
+          ORDER BY total DESC
+          LIMIT 20
+        `;
+  
+        const porColaboradorResult = await executeQuery(porColaboradorQuery, [inicio, fim]);
+        const porColaborador = Array.isArray(porColaboradorResult) ? porColaboradorResult : [];
+  
+        console.log('👥 Manutenções por colaborador:', porColaborador.length, 'colaboradores');
+  
+        // 5. Evolução mensal
+        const evolucaoQuery = `
+          SELECT 
+            DATE_FORMAT(lmd_data_hora_inicio, '%Y-%m') as mes,
+            COUNT(lmd.lmd_id) as total,
+            ROUND(AVG(CASE 
+              WHEN lmd_data_hora_fim IS NOT NULL THEN
+                TIMESTAMPDIFF(MINUTE, lmd_data_hora_inicio, lmd_data_hora_fim)
+              END)) as tempo_medio
+          FROM log_manutencao_dispositivo lmd
+          WHERE DATE(lmd_data_hora_inicio) BETWEEN ? AND ?
+            AND lmd.lmd_status IN (2, 3)
+          GROUP BY DATE_FORMAT(lmd_data_hora_inicio, '%Y-%m')
+          ORDER BY mes ASC
+        `;
+  
+        const evolucaoResult = await executeQuery(evolucaoQuery, [inicio, fim]);
+        const evolucaoMensal = Array.isArray(evolucaoResult) 
+          ? evolucaoResult.map(item => ({
+              mes: item.mes,
+              total: item.total,
+              tempo_medio: item.tempo_medio || 0
+            }))
+          : [];
+  
+        console.log('📈 Evolução mensal:', evolucaoMensal.length, 'meses');
+  
+        const resultado = {
+          totalManutencoes: Number(metricas.total_manutencoes) || 0,
+          tempoMedioMinutos: Number(metricas.tempo_medio_minutos) || 0,
+          manutencoesPendentes: Number(metricas.manutencoes_pendentes) || 0,
+          totalDispositivos: Number(totalDispositivos) || 0,
+          porDispositivo: porDispositivo,
+          porColaborador: porColaborador,
+          evolucaoMensal: evolucaoMensal
+        };
+  
+        console.log('✅ Métricas finais calculadas:', {
+          totalManutencoes: resultado.totalManutencoes,
+          tempoMedio: resultado.tempoMedioMinutos,
+          pendentes: resultado.manutencoesPendentes,
+          dispositivos: resultado.totalDispositivos,
+          topDispositivos: resultado.porDispositivo.length,
+          topColaboradores: resultado.porColaborador.length,
+          mesesEvolucao: resultado.evolucaoMensal.length
+        });
+  
+        return resultado;
+  
+      } catch (error) {
+        console.error('❌ Erro ao buscar métricas de manutenção:', error);
+        throw error;
+      }
+    }
   
 }
 

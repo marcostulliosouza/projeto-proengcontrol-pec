@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Modal, Button } from '../ui';
 import { ManutencaoService, type ManutencaoPreventiva, type RespostaItem } from '../../services/manutencaoService';
 
@@ -17,11 +17,7 @@ const DetalhesManutencaoModal: React.FC<DetalhesManutencaoModalProps> = ({
   } | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadDetalhes();
-  }, [manutencaoId]);
-
-  const loadDetalhes = async () => {
+  const loadDetalhes = useCallback(async () => {
     try {
       setLoading(true);
       const data = await ManutencaoService.getDetalhesManutencao(manutencaoId);
@@ -31,7 +27,11 @@ const DetalhesManutencaoModal: React.FC<DetalhesManutencaoModalProps> = ({
     } finally {
       setLoading(false);
     }
-  };
+  }, [manutencaoId]);
+
+  useEffect(() => {
+    loadDetalhes();
+  }, [loadDetalhes]);
 
   const formatDuracao = (minutos: number) => {
     const horas = Math.floor(minutos / 60);
@@ -43,13 +43,14 @@ const DetalhesManutencaoModal: React.FC<DetalhesManutencaoModalProps> = ({
     return `${mins}min`;
   };
 
-  const formatDuration = (minutes: number) => {
-    if (minutes < 60) {
-      return `${minutes}min`;
-    }
-    const hours = Math.floor(minutes / 60);
-    const remainingMinutes = minutes % 60;
-    return `${hours}h ${remainingMinutes}min`;
+  const formatData = (data: string | null) => {
+    if (!data) return 'Não informado';
+    return new Date(data).toLocaleString('pt-BR');
+  };
+
+  const formatDataCurta = (data: string | null) => {
+    if (!data) return 'Nunca';
+    return new Date(data).toLocaleDateString('pt-BR');
   };
 
   const getStatusConfig = (status: number) => {
@@ -86,6 +87,28 @@ const DetalhesManutencaoModal: React.FC<DetalhesManutencaoModalProps> = ({
     };
   };
 
+  const getTipoIntervaloInfo = (tipo?: string, intervaloDias?: number, intervaloPlacas?: number) => {
+    if (tipo === 'DIA') {
+      return {
+        tipo: 'Por Tempo',
+        intervalo: `${intervaloDias || 0} dias`,
+        icon: '📅'
+      };
+    } else if (tipo === 'PLACA') {
+      return {
+        tipo: 'Por Placas',
+        intervalo: `${intervaloPlacas || 0} placas`,
+        icon: '🔢'
+      };
+    } else {
+      return {
+        tipo: 'Não definido',
+        intervalo: 'Sem configuração',
+        icon: '❓'
+      };
+    }
+  };
+
   if (loading || !detalhes) {
     return (
       <Modal isOpen={true} onClose={onClose} title="Carregando..." size="xl">
@@ -101,6 +124,11 @@ const DetalhesManutencaoModal: React.FC<DetalhesManutencaoModalProps> = ({
 
   const { manutencao, respostas } = detalhes;
   const statusConfig = getStatusConfig(manutencao.lmd_status);
+  const tipoIntervaloInfo = getTipoIntervaloInfo(
+    manutencao.lmd_tipo_intervalo_manutencao, 
+    manutencao.lmd_intervalo_dias, 
+    manutencao.lmd_intervalo_placas
+  );
 
   return (
     <Modal
@@ -110,7 +138,7 @@ const DetalhesManutencaoModal: React.FC<DetalhesManutencaoModalProps> = ({
       size="xl"
     >
       <div className="max-h-[80vh] overflow-y-auto space-y-6">
-        {/* Header Principal - mesmo padrão do chamado */}
+        {/* Header Principal */}
         <div className="bg-gradient-to-r from-slate-50 to-slate-100 border border-slate-200 rounded-lg p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center space-x-4">
@@ -167,16 +195,141 @@ const DetalhesManutencaoModal: React.FC<DetalhesManutencaoModalProps> = ({
                 {formatDuracao(manutencao.duracao_total || 0)}
               </div>
             </div>
-            <div className="bg-white p-3 rounded-lg border">
-              <div className="text-xs text-slate-500 font-medium">Ciclos Executados</div>
-              <div className="text-sm font-semibold text-slate-900">
+          </div>
+        </div>
+
+        {/* Informações de Configuração da Manutenção */}
+        <div className="bg-white border border-slate-200 rounded-lg p-6">
+          <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center">
+            <svg className="w-5 h-5 mr-2 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            Configuração da Manutenção
+          </h3>
+          
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {/* Tipo de Intervalo */}
+            <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
+              <div className="flex items-center space-x-2 mb-2">
+                <span className="text-lg">{tipoIntervaloInfo.icon}</span>
+                <div className="text-xs text-purple-600 font-medium">Tipo de Intervalo</div>
+              </div>
+              <div className="text-sm font-semibold text-purple-900">{tipoIntervaloInfo.tipo}</div>
+              <div className="text-xs text-purple-700">{tipoIntervaloInfo.intervalo}</div>
+            </div>
+
+            {/* Ciclos Executados */}
+            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+              <div className="flex items-center space-x-2 mb-2">
+                <span className="text-lg">⚙️</span>
+                <div className="text-xs text-blue-600 font-medium">Ciclos Executados</div>
+              </div>
+              <div className="text-sm font-semibold text-blue-900">
                 {manutencao.lmd_ciclos_totais_executados || 0}
               </div>
+              <div className="text-xs text-blue-700">no momento da manutenção</div>
+            </div>
+            
+
+             {/* Progresso do Ciclo */}
+             {(() => {
+              let percentual = 0;
+              let detalhes = '';
+              let status = '';
+              let corCard = 'bg-gray-50 border-gray-200';
+              let corTexto = 'text-gray-600';
+              let corValor = 'text-gray-900';
+              let icone = '📊';
+              
+              if (manutencao.lmd_tipo_intervalo_manutencao === 'PLACA' && 
+                  manutencao.lmd_placas_executadas !== undefined && 
+                  manutencao.lmd_intervalo_placas !== undefined) {
+                percentual = Math.round((manutencao.lmd_placas_executadas / manutencao.lmd_intervalo_placas) * 100);
+                detalhes = `${manutencao.lmd_placas_executadas}/${manutencao.lmd_intervalo_placas} placas`;
+                
+                if (percentual <= 80) {
+                  status = 'Em dia';
+                  corCard = 'bg-green-50 border-green-200';
+                  corTexto = 'text-green-600';
+                  corValor = 'text-green-900';
+                  icone = '✅';
+                } else if (percentual <= 100) {
+                  status = 'Próximo do limite';
+                  corCard = 'bg-yellow-50 border-yellow-200';
+                  corTexto = 'text-yellow-600';
+                  corValor = 'text-yellow-900';
+                  icone = '⚠️';
+                } else {
+                  status = 'Atrasada';
+                  corCard = 'bg-red-50 border-red-200';
+                  corTexto = 'text-red-600';
+                  corValor = 'text-red-900';
+                  icone = '🚨';
+                }
+              } else if (manutencao.lmd_tipo_intervalo_manutencao === 'DIA' && 
+                         manutencao.lmd_data_hora_ultima_manutencao && 
+                         manutencao.lmd_intervalo_dias !== undefined) {
+                const diasPassados = Math.floor((new Date(manutencao.lmd_data_hora_inicio).getTime() - new Date(manutencao.lmd_data_hora_ultima_manutencao).getTime()) / (1000 * 60 * 60 * 24));
+                percentual = Math.round((diasPassados / manutencao.lmd_intervalo_dias) * 100);
+                detalhes = `${diasPassados}/${manutencao.lmd_intervalo_dias} dias`;
+                
+                if (percentual <= 80) {
+                  status = 'Em dia';
+                  corCard = 'bg-green-50 border-green-200';
+                  corTexto = 'text-green-600';
+                  corValor = 'text-green-900';
+                  icone = '✅';
+                } else if (percentual <= 100) {
+                  status = 'Próximo do limite';
+                  corCard = 'bg-yellow-50 border-yellow-200';
+                  corTexto = 'text-yellow-600';
+                  corValor = 'text-yellow-900';
+                  icone = '⚠️';
+                } else {
+                  status = 'Atrasada';
+                  corCard = 'bg-red-50 border-red-200';
+                  corTexto = 'text-red-600';
+                  corValor = 'text-red-900';
+                  icone = '🚨';
+                }
+              } else {
+                status = 'Sem dados';
+                detalhes = 'do ciclo de manutenção';
+                percentual = 0;
+              }
+              
+              return (
+                <div className={`p-4 rounded-lg border ${corCard}`}>
+                  <div className="flex items-center space-x-2 mb-2">
+                    <span className="text-lg">{icone}</span>
+                    <div className={`text-xs font-medium ${corTexto}`}>Status do Ciclo</div>
+                  </div>
+                  <div className={`text-sm font-semibold ${corValor}`}>
+                    {percentual > 0 ? `${percentual}%` : 'N/A'}
+                  </div>
+                  <div className={`text-xs ${corTexto}`}>
+                    {status} - {detalhes}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Data da Última Manutenção */}
+            <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+              <div className="flex items-center space-x-2 mb-2">
+                <span className="text-lg">📅</span>
+                <div className="text-xs text-green-600 font-medium">Contexto Temporal</div>
+              </div>
+              <div className="text-sm font-semibold text-green-900">
+                {formatDataCurta(manutencao.lmd_data_hora_inicio)}
+              </div>
+              <div className="text-xs text-green-700">Data desta manutenção</div>
             </div>
           </div>
         </div>
 
-        {/* Linha do Tempo / Timeline - mesmo padrão do chamado */}
+        {/* Linha do Tempo / Timeline */}
         <div className="bg-white border border-slate-200 rounded-lg p-6">
           <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center">
             <svg className="w-5 h-5 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -201,7 +354,7 @@ const DetalhesManutencaoModal: React.FC<DetalhesManutencaoModalProps> = ({
                   <div className="flex items-center justify-between">
                     <h4 className="text-sm font-semibold text-slate-900">Manutenção Iniciada</h4>
                     <span className="text-xs text-slate-500">
-                      {new Date(manutencao.lmd_data_hora_inicio).toLocaleString('pt-BR')}
+                      {formatData(manutencao.lmd_data_hora_inicio)}
                     </span>
                   </div>
                   <div className="flex items-center space-x-2 mt-1">
@@ -214,6 +367,9 @@ const DetalhesManutencaoModal: React.FC<DetalhesManutencaoModalProps> = ({
                   </div>
                   <div className="text-xs text-slate-500 mt-1">
                     Dispositivo: <span className="font-medium">{manutencao.dispositivo_descricao}</span>
+                  </div>
+                  <div className="text-xs text-slate-500 mt-1">
+                    Contexto: {manutencao.lmd_ciclos_totais_executados} ciclos executados no dispositivo
                   </div>
                 </div>
               </div>
@@ -268,7 +424,7 @@ const DetalhesManutencaoModal: React.FC<DetalhesManutencaoModalProps> = ({
                       </h4>
                       {manutencao.lmd_data_hora_fim && (
                         <span className="text-xs text-slate-500">
-                          {new Date(manutencao.lmd_data_hora_fim).toLocaleString('pt-BR')}
+                          {formatData(manutencao.lmd_data_hora_fim)}
                         </span>
                       )}
                     </div>
@@ -282,7 +438,7 @@ const DetalhesManutencaoModal: React.FC<DetalhesManutencaoModalProps> = ({
                     </div>
                     <div className="text-xs text-slate-500 mt-1">
                       Duração total: <span className="font-mono font-medium">
-                        {formatDuration(manutencao.duracao_total || 0)}
+                        {formatDuracao(manutencao.duracao_total || 0)}
                       </span>
                     </div>
                   </div>
@@ -326,13 +482,13 @@ const DetalhesManutencaoModal: React.FC<DetalhesManutencaoModalProps> = ({
             <div className="grid grid-cols-3 gap-4 mb-6">
               <div className="bg-green-50 p-3 rounded-lg border border-green-200">
                 <div className="text-lg font-bold text-green-800">
-                  {respostas.filter(r => r.rif_ok === 1).length} {/* ✅ CORRIGIDO */}
+                  {respostas.filter(r => r.rif_ok === 1).length}
                 </div>
                 <div className="text-xs text-green-600 font-medium">Itens OK</div>
               </div>
               <div className="bg-red-50 p-3 rounded-lg border border-red-200">
                 <div className="text-lg font-bold text-red-800">
-                  {respostas.filter(r => r.rif_ok === 0).length} {/* ✅ CORRIGIDO */}
+                  {respostas.filter(r => r.rif_ok === 0).length}
                 </div>
                 <div className="text-xs text-red-600 font-medium">Com Problemas</div>
               </div>
@@ -348,7 +504,7 @@ const DetalhesManutencaoModal: React.FC<DetalhesManutencaoModalProps> = ({
                 <div 
                   key={resposta.rif_item} 
                   className={`border rounded-lg p-4 ${
-                    resposta.rif_ok === 1 // ✅ CORRIGIDO: Era === true
+                    resposta.rif_ok === 1
                       ? 'border-green-200 bg-green-50' 
                       : 'border-red-200 bg-red-50'
                   }`}
@@ -356,11 +512,11 @@ const DetalhesManutencaoModal: React.FC<DetalhesManutencaoModalProps> = ({
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex items-start space-x-3">
                       <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
-                        resposta.rif_ok === 1 // ✅ CORRIGIDO: Era === true
+                        resposta.rif_ok === 1
                           ? 'bg-green-500 text-white' 
                           : 'bg-red-500 text-white'
                       }`}>
-                        {resposta.rif_ok === 1 ? '✓' : '✗'} {/* ✅ CORRIGIDO */}
+                        {resposta.rif_ok === 1 ? '✓' : '✗'}
                       </div>
                       <div className="flex-1">
                         <p className="font-medium text-slate-900 text-sm">
@@ -370,11 +526,11 @@ const DetalhesManutencaoModal: React.FC<DetalhesManutencaoModalProps> = ({
                     </div>
                     
                     <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                      resposta.rif_ok === 1 // ✅ CORRIGIDO: Era === true
+                      resposta.rif_ok === 1
                         ? 'bg-green-100 text-green-800' 
                         : 'bg-red-100 text-red-800'
                     }`}>
-                      {resposta.rif_ok === 1 ? '✅ OK' : '❌ Não OK'} {/* ✅ CORRIGIDO */}
+                      {resposta.rif_ok === 1 ? '✅ OK' : '❌ Não OK'}
                     </span>
                   </div>
                   
@@ -421,7 +577,7 @@ const DetalhesManutencaoModal: React.FC<DetalhesManutencaoModalProps> = ({
               <div className="bg-white p-3 rounded border border-green-200">
                 <div className="text-xs text-green-600 font-medium">Duração Total</div>
                 <div className="font-mono text-sm font-bold text-green-800">
-                  {formatDuration(manutencao.duracao_total || 0)}
+                  {formatDuracao(manutencao.duracao_total || 0)}
                 </div>
               </div>
               <div className="bg-white p-3 rounded border border-green-200">
@@ -433,7 +589,7 @@ const DetalhesManutencaoModal: React.FC<DetalhesManutencaoModalProps> = ({
               <div className="bg-white p-3 rounded border border-green-200">
                 <div className="text-xs text-green-600 font-medium">Taxa de Sucesso</div>
                 <div className="font-mono text-sm font-bold text-green-800">
-                  {respostas.length > 0 ? Math.round((respostas.filter(r => r.rif_ok === 1).length / respostas.length) * 100) : 0}% {/* ✅ CORRIGIDO */}
+                  {respostas.length > 0 ? Math.round((respostas.filter(r => r.rif_ok === 1).length / respostas.length) * 100) : 0}%
                 </div>
               </div>
               <div className="bg-white p-3 rounded border border-green-200">

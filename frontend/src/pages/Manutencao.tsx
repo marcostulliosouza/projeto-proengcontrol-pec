@@ -29,8 +29,6 @@ const Manutencao: React.FC = () => {
   const { state: authState } = useAuth();
   const permissions = usePermissions(authState.user?.categoria);
 
-  
-
   // Carregar dados iniciais
   useEffect(() => {
     loadData();
@@ -253,19 +251,38 @@ const Manutencao: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Manutenção Preventiva</h1> 
-        </div>
-        <div className="flex space-x-2">
-          <Button
-            variant="secondary"
-            onClick={loadData}
-            disabled={loading}
-          >
-            🔄 Atualizar
-          </Button>
+      {/* Header Principal Modernizado */}
+      <div className="bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-700 rounded-xl p-8 text-white shadow-2xl">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold mb-2 flex items-center">
+              <span className="bg-white bg-opacity-20 rounded-lg p-2 mr-4">
+                🔧
+              </span>
+              Manutenção Preventiva
+            </h1>
+            <p className="text-blue-100 text-lg">
+              Gerencie e monitore todas as manutenções dos seus dispositivos
+            </p>
+            {manutencaoAtiva && (
+              <div className="mt-3 flex items-center bg-orange-500 bg-opacity-80 rounded-lg px-3 py-1">
+                <div className="w-2 h-2 bg-white rounded-full animate-pulse mr-2"></div>
+                <span className="text-sm font-medium">Você tem uma manutenção ativa</span>
+              </div>
+            )}
+          </div>
+          <div className="text-right">
+            <div className="text-4xl font-bold">{dispositivos.length}</div>
+            <div className="text-blue-100">Dispositivos</div>
+            <Button
+              variant="secondary"
+              onClick={loadData}
+              disabled={loading}
+              className="mt-3 bg-white bg-opacity-20 hover:bg-opacity-30 text-white border-white border-opacity-30"
+            >
+              {loading ? '⏳' : '🔄'} Atualizar
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -278,169 +295,224 @@ const Manutencao: React.FC = () => {
         />
       )}
 
-      {/* Tabs */}
-      <div className="border-b border-gray-200">
-        <nav className="-mb-px flex space-x-8">
-          <button
-            onClick={() => setActiveTab('dispositivos')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
-              activeTab === 'dispositivos'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            🔧 Dispositivos ({paginationDispositivos.totalItems})
-          </button>
-          <button
-            onClick={() => setActiveTab('historico')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
-              activeTab === 'historico'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            📋 Histórico
-          </button>
-          {permissions.isSupervisorOrAbove() && (
-            <button
-              onClick={() => setActiveTab('metricas')}
-              className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                activeTab === 'metricas'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              📊 Métricas
-            </button>
-          )}
-        </nav>
+      {/* Cards de Estatísticas Principais */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <Card className="bg-gradient-to-br from-red-500 to-red-600 text-white transform hover:scale-105 transition-transform shadow-lg">
+          <div className="flex items-center justify-between p-6">
+            <div>
+              <p className="text-red-100 text-sm font-medium">Manutenção Necessária</p>
+              <p className="text-3xl font-bold mb-1">
+                {dispositivos.filter(d => d.necessita_manutencao).length}
+              </p>
+              <p className="text-red-200 text-xs">
+                {((dispositivos.filter(d => d.necessita_manutencao).length / Math.max(dispositivos.length, 1)) * 100).toFixed(1)}% do total
+              </p>
+            </div>
+            <div className="w-16 h-16 bg-red-400 bg-opacity-30 rounded-full flex items-center justify-center text-2xl">
+              🚨
+            </div>
+          </div>
+        </Card>
+        
+        <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white transform hover:scale-105 transition-transform shadow-lg">
+          <div className="flex items-center justify-between p-6">
+            <div>
+              <p className="text-green-100 text-sm font-medium">Em Dia</p>
+              <p className="text-3xl font-bold mb-1">
+                {dispositivos.filter(d => !d.necessita_manutencao).length}
+              </p>
+              <p className="text-green-200 text-xs">
+                {((dispositivos.filter(d => !d.necessita_manutencao).length / Math.max(dispositivos.length, 1)) * 100).toFixed(1)}% do total
+              </p>
+            </div>
+            <div className="w-16 h-16 bg-green-400 bg-opacity-30 rounded-full flex items-center justify-center text-2xl">
+              ✅
+            </div>
+          </div>
+        </Card>
+        
+        <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white transform hover:scale-105 transition-transform shadow-lg">
+          <div className="flex items-center justify-between p-6">
+            <div>
+              <p className="text-blue-100 text-sm font-medium">Total de Dispositivos</p>
+              <p className="text-3xl font-bold mb-1">{dispositivos.length}</p>
+              <p className="text-blue-200 text-xs">
+                Configurados para manutenção
+              </p>
+            </div>
+            <div className="w-16 h-16 bg-blue-400 bg-opacity-30 rounded-full flex items-center justify-center text-2xl">
+              📋
+            </div>
+          </div>
+        </Card>
+
+        <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white transform hover:scale-105 transition-transform shadow-lg">
+          <div className="flex items-center justify-between p-6">
+            <div>
+              <p className="text-purple-100 text-sm font-medium">Taxa de Conformidade</p>
+              <p className="text-3xl font-bold mb-1">
+                {dispositivos.length > 0 
+                  ? Math.round(((dispositivos.filter(d => !d.necessita_manutencao).length / dispositivos.length) * 100))
+                  : 0
+                }%
+              </p>
+              <p className="text-purple-200 text-xs">
+                Dispositivos em dia
+              </p>
+            </div>
+            <div className="w-16 h-16 bg-purple-400 bg-opacity-30 rounded-full flex items-center justify-center text-2xl">
+              📊
+            </div>
+          </div>
+        </Card>
       </div>
 
-      {/* Tab Content */}
-      {activeTab === 'dispositivos' && (
-        <div className="space-y-4">
-          
+      {/* Navegação por Tabs Modernizada */}
+      <Card className="overflow-hidden">
+        <div className="bg-gray-50 px-6 py-4 border-b">
+          <nav className="flex space-x-8">
+            <button
+              onClick={() => setActiveTab('dispositivos')}
+              className={`group flex items-center py-3 px-4 border-b-2 font-medium text-sm transition-colors ${
+                activeTab === 'dispositivos'
+                  ? 'border-blue-500 text-blue-600 bg-blue-50 rounded-t-lg'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 hover:bg-gray-100 rounded-lg'
+              }`}
+            >
+              <span className="mr-2 text-lg">🔧</span>
+              <span>Dispositivos</span>
+              <span className={`ml-2 px-2 py-1 rounded-full text-xs font-bold ${
+                activeTab === 'dispositivos' 
+                  ? 'bg-blue-500 text-white' 
+                  : 'bg-gray-200 text-gray-600 group-hover:bg-gray-300'
+              }`}>
+                {paginationDispositivos.totalItems}
+              </span>
+            </button>
+            
+            <button
+              onClick={() => setActiveTab('historico')}
+              className={`group flex items-center py-3 px-4 border-b-2 font-medium text-sm transition-colors ${
+                activeTab === 'historico'
+                  ? 'border-blue-500 text-blue-600 bg-blue-50 rounded-t-lg'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 hover:bg-gray-100 rounded-lg'
+              }`}
+            >
+              <span className="mr-2 text-lg">📋</span>
+              <span>Histórico</span>
+            </button>
+            
+            {permissions.isSupervisorOrAbove() && (
+              <button
+                onClick={() => setActiveTab('metricas')}
+                className={`group flex items-center py-3 px-4 border-b-2 font-medium text-sm transition-colors ${
+                  activeTab === 'metricas'
+                    ? 'border-blue-500 text-blue-600 bg-blue-50 rounded-t-lg'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 hover:bg-gray-100 rounded-lg'
+                }`}
+              >
+                <span className="mr-2 text-lg">📊</span>
+                <span>Métricas</span>
+                <span className="ml-1 px-1.5 py-0.5 rounded text-xs bg-purple-100 text-purple-600 font-medium">
+                  PRO
+                </span>
+              </button>
+            )}
+          </nav>
+        </div>
 
-          {/* Tabela principal */}
-          <Card>
-            <div className="mb-6">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-bold text-gray-900">
-                  Dispositivos para Manutenção
-                </h2>
+        {/* Conteúdo das Tabs */}
+        <div className="p-6">
+          {activeTab === 'dispositivos' && (
+            <div className="space-y-6">
+              {/* Header da Seção */}
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900 flex items-center">
+                    <span className="bg-blue-100 rounded-lg p-2 mr-3">🔧</span>
+                    Dispositivos para Manutenção
+                  </h2>
+                  <p className="text-gray-600 mt-1">
+                    Gerencie as manutenções preventivas dos seus dispositivos
+                  </p>
+                </div>
                 <Button
-                  variant="secondary"
+                  variant="primary"
                   onClick={loadData}
                   disabled={loading}
-                  className="flex items-center space-x-2"
+                  className="flex items-center space-x-2 shadow-lg"
                 >
-                  <span>🔄</span>
-                  <span>Atualizar</span>
+                  <span>{loading ? '⏳' : '🔄'}</span>
+                  <span>Atualizar Lista</span>
                 </Button>
               </div>
 
-              {/* Status cards */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-red-600 text-sm font-medium">Manutenção Necessária</p>
-                      <p className="text-2xl font-bold text-red-700">
-                        {dispositivos.filter(d => d.necessita_manutencao).length}
-                      </p>
-                    </div>
-                    <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
-                      🚨
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-green-600 text-sm font-medium">Em Dia</p>
-                      <p className="text-2xl font-bold text-green-700">
-                        {dispositivos.filter(d => !d.necessita_manutencao).length}
-                      </p>
-                    </div>
-                    <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
-                      ✅
+              {/* Informações de Paginação Modernizada */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <div className="flex items-center justify-between text-sm">
+                  <div className="flex items-center space-x-4">
+                    <div className="text-gray-700">
+                      Mostrando <span className="font-bold text-gray-900">
+                        {((paginationDispositivos.currentPage - 1) * paginationDispositivos.itemsPerPage) + 1}
+                      </span> - <span className="font-bold text-gray-900">
+                        {Math.min(paginationDispositivos.currentPage * paginationDispositivos.itemsPerPage, paginationDispositivos.totalItems)}
+                      </span> de <span className="font-bold text-gray-900">
+                        {paginationDispositivos.totalItems}
+                      </span> dispositivos
                     </div>
                   </div>
-                </div>
-                
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-blue-600 text-sm font-medium">Total</p>
-                      <p className="text-2xl font-bold text-blue-700">{dispositivos.length}</p>
-                    </div>
-                    <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-                      📋
-                    </div>
+                  
+                  <div className="flex items-center space-x-3">
+                    <label className="text-gray-600 font-medium">Itens por página:</label>
+                    <select 
+                      value={paginationDispositivos.itemsPerPage}
+                      onChange={(e) => setPaginationDispositivos(prev => ({
+                        ...prev,
+                        itemsPerPage: parseInt(e.target.value),
+                        currentPage: 1
+                      }))}
+                      className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm font-medium shadow-sm hover:border-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    >
+                      <option value={5}>5</option>
+                      <option value={10}>10</option>
+                      <option value={20}>20</option>
+                      <option value={50}>50</option>
+                    </select>
                   </div>
                 </div>
               </div>
 
-              {/* Informações de paginação melhorada */}
-              <div className="flex items-center justify-between text-sm text-gray-600 mb-4">
-                <div>
-                  Mostrando <span className="font-medium text-gray-900">
-                    {((paginationDispositivos.currentPage - 1) * paginationDispositivos.itemsPerPage) + 1}
-                  </span> até <span className="font-medium text-gray-900">
-                    {Math.min(paginationDispositivos.currentPage * paginationDispositivos.itemsPerPage, paginationDispositivos.totalItems)}
-                  </span> de <span className="font-medium text-gray-900">
-                    {paginationDispositivos.totalItems}
-                  </span> dispositivos
-                </div>
-                
-                <div className="flex items-center space-x-2">
-                  <span>Itens por página:</span>
-                  <select 
-                    value={paginationDispositivos.itemsPerPage}
-                    onChange={(e) => setPaginationDispositivos(prev => ({
-                      ...prev,
-                      itemsPerPage: parseInt(e.target.value),
-                      currentPage: 1
-                    }))}
-                    className="border border-gray-300 rounded px-2 py-1 text-sm"
-                  >
-                    <option value={5}>5</option>
-                    <option value={10}>10</option>
-                    <option value={20}>20</option>
-                    <option value={50}>50</option>
-                  </select>
-                </div>
+              {/* Tabela Melhorada */}
+              <div className="bg-white rounded-lg shadow-lg overflow-hidden border border-gray-200">
+                <Table
+                  columns={columnsDispositivos}
+                  data={dispositivosPaginados as unknown as Record<string, unknown>[]}
+                  loading={loading}
+                  emptyMessage="Nenhum dispositivo com manutenção configurada"
+                />
+
+                {/* Paginação Modernizada */}
+                {paginationDispositivos.totalPages > 1 && (
+                  <div className="bg-gray-50 px-6 py-4 border-t border-gray-200">
+                    <Pagination
+                      pagination={paginationDispositivos}
+                      onPageChange={handlePageChangeDispositivos}
+                    />
+                  </div>
+                )}
               </div>
             </div>
+          )}
 
-            <Table
-              columns={columnsDispositivos}
-              data={dispositivosPaginados as unknown as Record<string, unknown>[]}
-              loading={loading}
-              emptyMessage="Nenhum dispositivo com manutenção configurada"
-            />
+          {activeTab === 'historico' && (
+            <HistoricoManutencoes />
+          )}
 
-            {/* Paginação melhorada */}
-            {paginationDispositivos.totalPages > 1 && (
-              <div className="mt-6 border-t border-gray-200 pt-4">
-                <Pagination
-                  pagination={paginationDispositivos}
-                  onPageChange={handlePageChangeDispositivos}
-                />
-              </div>
-            )}
-          </Card>
+          {activeTab === 'metricas' && permissions.isSupervisorOrAbove() && (
+            <MetricasManutencao />
+          )}
         </div>
-      )}
-
-      {activeTab === 'historico' && (
-        <HistoricoManutencoes />
-      )}
-
-      {activeTab === 'metricas' && permissions.isSupervisorOrAbove() && (
-        <MetricasManutencao />
-      )}
+      </Card>
 
       {/* Modal Iniciar Manutenção */}
       {showIniciarModal && dispositivoSelecionado && (

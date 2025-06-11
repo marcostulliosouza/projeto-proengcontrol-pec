@@ -141,17 +141,9 @@ export const iniciarManutencao = asyncHandler(async (req: AuthRequest, res: Resp
     return;
   }
 
-  const {
-    dispositivoId,
-    ciclosTotais,
-    dataUltimaManutencao,
-    tipoIntervalo,
-    intervaloDias,
-    intervaloPlacas,
-    placasExecutadas
-  } = req.body;
+  const { dispositivoId } = req.body;
 
-  // Validações básicas
+  // Validação básica
   if (!dispositivoId) {
     res.status(400).json({
       success: false,
@@ -162,18 +154,90 @@ export const iniciarManutencao = asyncHandler(async (req: AuthRequest, res: Resp
   }
 
   try {
-    const result = await ManutencaoPreventivaModel.iniciarManutencaoSegura({
-      dispositivoId,
-      colaboradorId: userId,
-      ciclosTotais: ciclosTotais || 0,
-      dataUltimaManutencao: dataUltimaManutencao || null,
-      tipoIntervalo: tipoIntervalo || 'DIA',
-      intervaloDias: intervaloDias || 0,
-      intervaloPlacas: intervaloPlacas || 0,
-      placasExecutadas: placasExecutadas || 0
+    console.log(`🔧 Iniciando manutenção automatizada - Dispositivo: ${dispositivoId}, Usuário: ${userId}`);
+
+    // 1. Buscar dados completos do dispositivo (baseado na estrutura real do banco)
+    const { executeQuery } = require('../config/database');
+    const dispositivoQuery = `
+      SELECT 
+        d.dis_id,
+        d.dis_descricao,
+        d.dis_codigo_sap,
+        d.dis_com_manutencao,
+        d.dis_info_manutencao,
+        d.dis_ciclos_executados,
+        COALESCE(dim.dim_tipo_intervalo, 'DIA') as dim_tipo_intervalo,
+        COALESCE(dim.dim_intervalo_dias, 30) as dim_intervalo_dias,
+        COALESCE(dim.dim_intervalo_placas, 1000) as dim_intervalo_placas,
+        COALESCE(dim.dim_placas_executadas, 0) as dim_placas_executadas,
+        dim.dim_data_ultima_manutencao,
+        COALESCE(dim.dim_formulario_manutencao, 1) as dim_formulario_manutencao,
+        c.cli_nome as cliente_nome,
+        COALESCE(fmp.fmp_descricao, 'Formulário Básico') as formulario_descricao
+      FROM dispositivos d
+      LEFT JOIN dispositivo_info_manutencao dim ON d.dis_info_manutencao = dim.dim_id
+      LEFT JOIN clientes c ON d.dis_cliente = c.cli_id
+      LEFT JOIN formularios_manutencao_preventiva fmp ON dim.dim_formulario_manutencao = fmp.fmp_id
+      WHERE d.dis_id = ? AND d.dis_status = 1
+    `;
+
+    console.log(`📊 Buscando dados do dispositivo ${dispositivoId}...`);
+    const dispositivoResults = await executeQuery(dispositivoQuery, [dispositivoId]);
+    
+    if (!Array.isArray(dispositivoResults) || dispositivoResults.length === 0) {
+      console.log(`❌ Dispositivo ${dispositivoId} não encontrado`);
+      res.status(404).json({
+        success: false,
+        message: 'Dispositivo não encontrado ou inativo',
+        timestamp: new Date().toISOString()
+      } as ApiResponse);
+      return;
+    }
+
+    const dispositivo = dispositivoResults[0];
+    console.log(`✅ Dispositivo encontrado:`, {
+      id: dispositivo.dis_id,
+      descricao: dispositivo.dis_descricao,
+      comManutencao: dispositivo.dis_com_manutencao,
+      tipoIntervalo: dispositivo.dim_tipo_intervalo,
+      ciclosExecutados: dispositivo.dis_ciclos_executados
     });
 
+    // 2. Validar se dispositivo tem manutenção ativa
+    if (!dispositivo.dis_com_manutencao) {
+      console.log(`❌ Dispositivo ${dispositivoId} não configurado para manutenção`);
+      res.status(400).json({
+        success: false,
+        message: 'Dispositivo não está configurado para manutenção preventiva',
+        timestamp: new Date().toISOString()
+      } as ApiResponse);
+      return;
+    }
+
+    // 3. Usar dados reais do banco (dis_ciclos_executados)
+    const ciclosTotais = dispositivo.dis_ciclos_executados || 0;
+    
+    console.log(`📊 Ciclos totais do dispositivo (dis_ciclos_executados): ${ciclosTotais}`);
+
+    // 4. Dados para iniciar manutenção - TODOS baseados no banco real
+    const dadosManutencao = {
+      dispositivoId: dispositivoId,
+      colaboradorId: userId,
+      ciclosTotais: ciclosTotais,
+      dataUltimaManutencao: dispositivo.dim_data_ultima_manutencao || null,
+      tipoIntervalo: dispositivo.dim_tipo_intervalo,
+      intervaloDias: dispositivo.dim_intervalo_dias,
+      intervaloPlacas: dispositivo.dim_intervalo_placas,
+      placasExecutadas: dispositivo.dim_placas_executadas
+    };
+
+    console.log(`🚀 Dados preparados para manutenção:`, dadosManutencao);
+
+    // 5. Iniciar manutenção com dados automáticos usando o método existente
+    const result = await ManutencaoPreventivaModel.iniciarManutencaoSegura(dadosManutencao);
+
     if (!result.success) {
+      console.log(`❌ Falha ao iniciar manutenção: ${result.error}`);
       res.status(409).json({
         success: false,
         message: result.error,
@@ -182,34 +246,71 @@ export const iniciarManutencao = asyncHandler(async (req: AuthRequest, res: Resp
       return;
     }
 
-    // Emitir evento via WebSocket para atualizar outros usuários
-    const io = req.app.get('io');
-    if (io) {
-      io.emit('manutencao_iniciada', {
-        dispositivoId,
-        manutencaoId: result.manutencaoId,
-        colaboradorId: userId,
-        timestamp: new Date().toISOString()
-      });
+    console.log(`✅ Manutenção iniciada com sucesso - ID: ${result.manutencaoId}`);
+
+    // 6. Emitir evento via WebSocket se disponível
+    try {
+      const io = req.app.get('io');
+      if (io) {
+        io.emit('manutencao_iniciada', {
+          dispositivoId,
+          manutencaoId: result.manutencaoId,
+          colaboradorId: userId,
+          dispositivoDescricao: dispositivo.dis_descricao,
+          timestamp: new Date().toISOString()
+        });
+        console.log(`📡 Evento WebSocket enviado`);
+      }
+    } catch (ioError) {
+      console.log(`⚠️ Erro ao enviar WebSocket (não crítico):`, ioError);
     }
 
+    // 7. Resposta de sucesso
     res.status(201).json({
       success: true,
       message: 'Manutenção iniciada com sucesso',
-      data: { id: result.manutencaoId },
+      data: { 
+        id: result.manutencaoId,
+        dispositivo: {
+          id: dispositivo.dis_id,
+          descricao: dispositivo.dis_descricao,
+          formulario: dispositivo.formulario_descricao,
+          ciclosTotais: ciclosTotais,
+          cliente: dispositivo.cliente_nome,
+          codigoSap: dispositivo.dis_codigo_sap
+        }
+      },
       timestamp: new Date().toISOString()
     } as ApiResponse);
 
+    console.log(`🎉 Manutenção automatizada iniciada com sucesso!`, {
+      manutencaoId: result.manutencaoId,
+      dispositivo: dispositivo.dis_descricao,
+      colaborador: userId,
+      ciclosTotais,
+      formulario: dispositivo.formulario_descricao,
+      cliente: dispositivo.cliente_nome
+    });
+
   } catch (error) {
-    console.error('Erro ao iniciar manutenção:', error);
+    console.error('❌ Erro crítico ao iniciar manutenção:', error);
+    
+    // Log detalhado para debug
+    if (error instanceof Error) {
+      console.error('Detalhes do erro:', {
+        name: error.name,
+        message: error.message,
+        stack: error.stack?.split('\n').slice(0, 5).join('\n') // Limitar stack trace
+      });
+    }
+    
     res.status(500).json({
       success: false,
-      message: 'Erro interno do servidor',
+      message: 'Erro interno do servidor ao iniciar manutenção',
       timestamp: new Date().toISOString()
     } as ApiResponse);
   }
 });
-
 
 // Finalizar manutenção
 export const finalizarManutencao = asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -496,46 +597,20 @@ export const getMetricasManutencao = asyncHandler(async (req: Request, res: Resp
   const { dataInicio, dataFim } = req.query;
 
   try {
-    // Métricas de manutenções realizadas
-    const manutencoes = await ManutencaoPreventivaModel.getHistoricoManutencoes({
-      dataInicio: dataInicio as string,
-      dataFim: dataFim as string,
-      status: 2 // Apenas finalizadas
+    console.log('🎯 Iniciando busca de métricas...', { dataInicio, dataFim });
+
+    // Usar o método melhorado da classe ManutencaoPreventivaModel
+    const metricas = await ManutencaoPreventivaModel.getMetricas(
+      dataInicio as string,
+      dataFim as string
+    );
+
+    console.log('✅ Métricas obtidas com sucesso:', {
+      totalManutencoes: metricas.totalManutencoes,
+      tempoMedio: metricas.tempoMedioMinutos,
+      pendentes: metricas.manutencoesPendentes,
+      dispositivos: metricas.totalDispositivos
     });
-
-    // Calcular métricas
-    const totalManutencoes = manutencoes.length;
-    const tempoMedio = manutencoes.length > 0 
-      ? manutencoes.reduce((acc, m) => acc + (m.duracao_total || 0), 0) / manutencoes.length
-      : 0;
-
-    // Agrupar por dispositivo
-    const porDispositivo = manutencoes.reduce((acc, m) => {
-      const key = m.dispositivo_descricao || 'Desconhecido';
-      acc[key] = (acc[key] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-
-    // Agrupar por colaborador
-    const porColaborador = manutencoes.reduce((acc, m) => {
-      const key = m.colaborador_nome || 'Desconhecido';
-      acc[key] = (acc[key] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-
-    // Dispositivos que precisam de manutenção
-    const dispositivosManutencao = await ManutencaoPreventivaModel.getDispositivosManutencao();
-    const pendentes = dispositivosManutencao.filter(d => d.necessita_manutencao).length;
-
-    const metricas = {
-      totalManutencoes,
-      tempoMedioMinutos: Math.round(tempoMedio),
-      manutencoesPendentes: pendentes,
-      totalDispositivos: dispositivosManutencao.length,
-      porDispositivo: Object.entries(porDispositivo).map(([nome, total]) => ({ nome, total })),
-      porColaborador: Object.entries(porColaborador).map(([nome, total]) => ({ nome, total })),
-      evolucaoMensal: await getEvolucaoMensal(dataInicio as string, dataFim as string)
-    };
 
     res.json({
       success: true,
@@ -543,11 +618,12 @@ export const getMetricasManutencao = asyncHandler(async (req: Request, res: Resp
       data: metricas,
       timestamp: new Date().toISOString()
     } as ApiResponse);
+
   } catch (error) {
-    console.error('Erro ao gerar métricas:', error);
+    console.error('❌ Erro ao gerar métricas:', error);
     res.status(500).json({
       success: false,
-      message: 'Erro ao gerar métricas',
+      message: 'Erro interno do servidor ao gerar métricas',
       timestamp: new Date().toISOString()
     } as ApiResponse);
   }
@@ -581,4 +657,5 @@ async function getEvolucaoMensal(dataInicio: string, dataFim: string) {
     console.error('Erro ao calcular evolução mensal:', error);
     return [];
   }
+
 }

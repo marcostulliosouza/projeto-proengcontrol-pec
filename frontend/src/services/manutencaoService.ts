@@ -37,7 +37,16 @@ export interface ManutencaoPreventiva {
   lmd_observacao: string | null;
   lmd_colaborador: number;
   lmd_status: number;
-  lmd_ciclos_totais_executados:number;
+  lmd_ciclos_totais_executados: number;
+  
+  // Campos de configuração da manutenção (salvos no momento da execução)
+  lmd_data_hora_ultima_manutencao?: string | null;
+  lmd_tipo_intervalo_manutencao?: 'DIA' | 'PLACA';
+  lmd_intervalo_dias?: number;
+  lmd_intervalo_placas?: number;
+  lmd_placas_executadas?: number;
+  
+  // Campos relacionados (joins)
   dispositivo_descricao?: string;
   colaborador_nome?: string;
   duracao_total?: number;
@@ -94,12 +103,6 @@ export class ManutencaoService {
   // Iniciar manutenção
   static async iniciarManutencao(data: {
     dispositivoId: number;
-    ciclosTotais?: number;
-    dataUltimaManutencao?: string;
-    tipoIntervalo?: string;
-    intervaloDias?: number;
-    intervaloPlacas?: number;
-    placasExecutadas?: number;
   }): Promise<{ success: boolean; id?: number; error?: string }> {
     try {
       const response = await ApiService.post<{ id: number }>('/manutencao/iniciar', data);
@@ -112,7 +115,29 @@ export class ManutencaoService {
           error: error.response.data.message || 'Dispositivo já está sendo atendido'
         };
       }
-      throw error;
+      
+      // Tratar erro 404 (dispositivo não encontrado)
+      if (error.response?.status === 404) {
+        return {
+          success: false,
+          error: 'Dispositivo não encontrado ou inativo'
+        };
+      }
+      
+      // Tratar erro 400 (configuração inválida)
+      if (error.response?.status === 400) {
+        return {
+          success: false,
+          error: error.response.data.message || 'Dispositivo não configurado para manutenção'
+        };
+      }
+      
+      // Outros erros
+      console.error('Erro ao iniciar manutenção:', error);
+      return {
+        success: false,
+        error: 'Erro interno do servidor'
+      };
     }
   }
 
