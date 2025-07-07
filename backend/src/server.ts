@@ -15,6 +15,7 @@ import manutencaoRoutes from './routes/manutencaoRoutes';
 import insumoRoutes from './routes/insumoRoutes';
 import compraRoutes from './routes/compraRoutes';
 import orcamentoRoutes from './routes/orcamentoRoutes';
+import relatoriosRoutes from './routes/relatoriosRoutes';
 
 import { testConnection } from './config/database';
 import { errorHandler } from './middlewares/errorHandler';
@@ -506,6 +507,7 @@ app.use(`${API_PREFIX}/manutencao`, manutencaoRoutes);
 app.use(`${API_PREFIX}/insumos`, insumoRoutes);
 app.use(`${API_PREFIX}/compras`, compraRoutes);
 app.use(`${API_PREFIX}/orcamentos`, orcamentoRoutes);
+app.use(`${API_PREFIX}/relatorios`, relatoriosRoutes);
 
 // Middleware de tratamento de erros (deve ser o último)
 app.use(errorHandler);

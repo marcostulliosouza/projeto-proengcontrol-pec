@@ -371,3 +371,124 @@ export interface ActiveUser {
   socketId?: string;
   connectedAt?: Date;
 }
+
+export interface RelatorioFiltros {
+  dataInicio?: string;
+  dataFim?: string;
+  cliente?: string;
+  status?: string;
+  tipo?: string;
+  operador?: string;
+  tecnico?: string;
+}
+
+export interface ChamadoRelatorio {
+  id: number;
+  cliente: string;
+  tipo: string;
+  status: string;
+  operador: string;
+  dataAbertura: string;
+  dataAtendimento?: string;
+  dataTermino?: string;
+  tempoAtendimento: string;
+  descricao: string;
+  produto?: string;
+  acao?: string;
+}
+
+export interface DispositivoRelatorio {
+  id: number;
+  dispositivo: string;
+  cliente: string;
+  status: string;
+  ultimaManutencao?: string;
+  proximaManutencao?: string;
+  localizacao?: string;
+  modelo?: string;
+  numeroSerie?: string;
+}
+
+export interface ManutencaoRelatorio {
+  id: number;
+  dispositivo: string;
+  cliente: string;
+  tipo: 'Preventiva' | 'Corretiva' | 'Preditiva';
+  dataAgendada: string;
+  dataRealizada?: string;
+  tecnico: string;
+  status: 'Agendado' | 'Em Andamento' | 'Concluído' | 'Cancelado' | 'Pendente';
+  observacoes?: string;
+  custos?: number;
+}
+
+export interface IndicadorProducao {
+  periodo: string;
+  chamadosAbertos: number;
+  chamadosFechados: number;
+  tempoMedioAtendimento: string;
+  satisfacaoCliente: string;
+  sla: number;
+  produtividade: number;
+}
+
+export interface RelatorioMetadados {
+  tipo: string;
+  dataGeracao: string;
+  usuario: string;
+  filtros: RelatorioFiltros;
+  totalRegistros: number;
+}
+
+export interface RelatorioResponse<T> {
+  dados: T[];
+  metadados: RelatorioMetadados;
+  success: boolean;
+}
+
+export type TipoRelatorio = 
+  | 'chamados-periodo'
+  | 'dispositivos-status' 
+  | 'manutencoes-preventivas'
+  | 'producao-indicadores'
+  | 'sla-atendimento'
+  | 'custos-operacionais';
+
+export interface ConfiguracaoRelatorio {
+  id: TipoRelatorio;
+  nome: string;
+  descricao: string;
+  permissao: string;
+  formatosExport: ('pdf' | 'excel' | 'csv')[];
+  filtrosDisponiveis: string[];
+  agendamento?: boolean;
+}
+
+// Interfaces para gráficos e dashboards
+export interface DadosGrafico {
+  labels: string[];
+  datasets: {
+    label: string;
+    data: number[];
+    backgroundColor?: string[];
+    borderColor?: string[];
+  }[];
+}
+
+export interface ResumoEstatisticas {
+  totalChamados: number;
+  chamadosAbertos: number;
+  chamadosFechados: number;
+  tempoMedioResposta: number;
+  satisfacaoMedia: number;
+  slaAtendido: number;
+}
+
+// Para exportação de relatórios
+export interface OpcoesExportacao {
+  formato: 'pdf' | 'excel' | 'csv';
+  incluirGraficos?: boolean;
+  incluirResumo?: boolean;
+  orientacao?: 'portrait' | 'landscape';
+  titulo?: string;
+}
